@@ -8,15 +8,17 @@ use crate::sonarqube::{
         SonarQubeConfig, Issue,
     },
 };
+use crate::database::ProjectService;
 
 pub struct SonarQubeService {
     client: SonarQubeClient,
+    project_service: ProjectService,
 }
 
 impl SonarQubeService {
-    pub fn new(config: SonarQubeConfig) -> Result<Self> {
+    pub fn new(config: SonarQubeConfig, project_service: ProjectService) -> Result<Self> {
         let client = SonarQubeClient::new(config)?;
-        Ok(Self { client })
+        Ok(Self { client, project_service })
     }
 
     /// Create a new project in SonarQube
@@ -45,7 +47,18 @@ impl SonarQubeService {
         }
 
         let response: CreateProjectResponse = self.client.post(&endpoint, &()).await?;
-
+        
+        // Save project to database
+        match self.project_service.create_project(&response.project).await {
+            Ok(db_project) => {
+                info!("Successfully saved project to database: {}", db_project.sonarqube_key);
+            }
+            Err(e) => {
+                warn!("Failed to save project to database: {}", e);
+                // Continue execution even if database save fails
+            }
+        }
+        
         info!("Successfully created project: {}", response.project.key);
         Ok(response)
     }

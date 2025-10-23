@@ -9,6 +9,7 @@ use std::sync::Arc;
 use tracing::info;
 use crate::config::logger;
 use crate::sonarqube::{SonarQubeService, models::SonarQubeConfig};
+use crate::database::{DatabaseConfig, create_connection, test_connection, ProjectService};
 
 pub async fn start() -> std::io::Result<()> {
     dotenvy::dotenv().ok();
@@ -30,7 +31,37 @@ pub async fn start() -> std::io::Result<()> {
             .unwrap_or(30),
     };
 
-    let sonar_service = match SonarQubeService::new(sonar_config) {
+    // Initialize Database connection
+    let db_config = DatabaseConfig::default();
+    let db_connection = match create_connection(&db_config).await {
+        Ok(db) => {
+            info!("Database connection initialized successfully");
+            
+            // Test the connection
+            if let Err(e) = test_connection(&db).await {
+                tracing::error!("Database connection test failed: {}", e);
+                return Err(std::io::Error::new(
+                    std::io::ErrorKind::Other,
+                    format!("Database connection test failed: {}", e),
+                ));
+            }
+            
+            Arc::new(db)
+        }
+        Err(e) => {
+            tracing::error!("Failed to initialize database connection: {}", e);
+            return Err(std::io::Error::new(
+                std::io::ErrorKind::Other,
+                format!("Failed to initialize database connection: {}", e),
+            ));
+        }
+    };
+
+    // Initialize Project Service
+    let project_service = Arc::new(ProjectService::new((*db_connection).clone()));
+
+    // Initialize SonarQube service with database integration
+    let sonar_service = match SonarQubeService::new(sonar_config, (*project_service).clone()) {
         Ok(service) => {
             info!("SonarQube service initialized successfully");
             Arc::new(service)
@@ -52,6 +83,7 @@ pub async fn start() -> std::io::Result<()> {
 
         App::new()
             .app_data(web::Data::new(sonar_service.clone()))
+            .app_data(web::Data::new(project_service.clone()))
             .wrap(middleware::Logger::default())
             .wrap(cors)
             .configure(init_config)
@@ -99,6 +131,26 @@ fn init_config(cfg: &mut web::ServiceConfig) {
             .service(
                 web::resource("/version")
                     .route(web::get().to(crate::sonarqube::handlers::get_server_version))
+            )
+    )
+    .service(
+        web::scope("/api/database")
+            .service(
+                web::resource("/projects")
+                    .route(web::get().to(crate::database::handlers::get_all_projects))
+            )
+            .service(
+                web::resource("/projects/{project_id}")
+                    .route(web::get().to(crate::database::handlers::get_project_by_id))
+                    .route(web::delete().to(crate::database::handlers::delete_project_from_db))
+            )
+            .service(
+                web::resource("/projects/{project_id}/deactivate")
+                    .route(web::post().to(crate::database::handlers::deactivate_project))
+            )
+            .service(
+                web::resource("/projects/sonarqube/{sonarqube_key}")
+                    .route(web::get().to(crate::database::handlers::get_project_by_sonarqube_key))
             )
     );
 }
