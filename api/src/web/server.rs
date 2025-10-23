@@ -5,8 +5,10 @@ use actix_web::App;
 use actix_web::HttpServer;
 use listenfd::ListenFd;
 use std::env;
+use std::sync::Arc;
 use tracing::info;
 use crate::config::logger;
+use crate::sonarqube::{SonarQubeService, models::SonarQubeConfig};
 
 pub async fn start() -> std::io::Result<()> {
     dotenvy::dotenv().ok();
@@ -17,6 +19,30 @@ pub async fn start() -> std::io::Result<()> {
     let server_port = env::var("SERVER_PORT").expect("PORT not set in .env file");
     let server_url = format!("{server_host}:{server_port}");
 
+    // Initialize SonarQube service
+    let sonar_config = SonarQubeConfig {
+        base_url: env::var("SONARQUBE_URL").unwrap_or_else(|_| "http://localhost:9000".to_string()),
+        username: env::var("SONARQUBE_USERNAME").unwrap_or_else(|_| "admin".to_string()),
+        password: env::var("SONARQUBE_PASSWORD").unwrap_or_else(|_| "admin".to_string()),
+        timeout_seconds: env::var("SONARQUBE_TIMEOUT")
+            .ok()
+            .and_then(|s| s.parse().ok())
+            .unwrap_or(30),
+    };
+
+    let sonar_service = match SonarQubeService::new(sonar_config) {
+        Ok(service) => {
+            info!("SonarQube service initialized successfully");
+            Arc::new(service)
+        }
+        Err(e) => {
+            tracing::error!("Failed to initialize SonarQube service: {}", e);
+            return Err(std::io::Error::new(
+                std::io::ErrorKind::Other,
+                format!("Failed to initialize SonarQube service: {}", e),
+            ));
+        }
+    };
 
     let mut server = HttpServer::new(move || {
         let cors = Cors::default()
@@ -25,6 +51,7 @@ pub async fn start() -> std::io::Result<()> {
             .allow_any_header();
 
         App::new()
+            .app_data(web::Data::new(sonar_service.clone()))
             .wrap(middleware::Logger::default())
             .wrap(cors)
             .configure(init_config)
@@ -42,5 +69,36 @@ pub async fn start() -> std::io::Result<()> {
 }
 
 fn init_config(cfg: &mut web::ServiceConfig) {
-
+    cfg.service(
+        web::scope("/api/sonarqube")
+            .service(
+                web::resource("/projects")
+                    .route(web::post().to(crate::sonarqube::handlers::create_project))
+            )
+            .service(
+                web::resource("/projects/{project_key}")
+                    .route(web::get().to(crate::sonarqube::handlers::get_project_info))
+                    .route(web::delete().to(crate::sonarqube::handlers::delete_project))
+            )
+            .service(
+                web::resource("/projects/{project_key}/exists")
+                    .route(web::get().to(crate::sonarqube::handlers::check_project_exists))
+            )
+            .service(
+                web::resource("/issues")
+                    .route(web::post().to(crate::sonarqube::handlers::get_project_issues))
+            )
+            .service(
+                web::resource("/issues/all")
+                    .route(web::post().to(crate::sonarqube::handlers::get_all_project_issues))
+            )
+            .service(
+                web::resource("/health")
+                    .route(web::get().to(crate::sonarqube::handlers::health_check))
+            )
+            .service(
+                web::resource("/version")
+                    .route(web::get().to(crate::sonarqube::handlers::get_server_version))
+            )
+    );
 }
