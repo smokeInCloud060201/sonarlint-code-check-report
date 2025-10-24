@@ -1,6 +1,5 @@
 mod web;
 mod config;
-mod utils;
 mod sonarqube;
 mod database;
 
