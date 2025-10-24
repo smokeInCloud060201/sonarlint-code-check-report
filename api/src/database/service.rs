@@ -19,7 +19,16 @@ impl ProjectService {
 
     /// Create a new project in the database
     pub async fn create_project(&self, sonar_project: &ProjectInfo) -> Result<ProjectModel> {
-        info!("Creating project in database: {}", sonar_project.key);
+        self.create_project_with_folder_path(sonar_project, None).await
+    }
+
+    /// Create a new project in the database with folder path
+    pub async fn create_project_with_folder_path(
+        &self, 
+        sonar_project: &ProjectInfo, 
+        project_folder_path: Option<String>
+    ) -> Result<ProjectModel> {
+        info!("Creating project in database: {} with folder path: {:?}", sonar_project.key, project_folder_path);
 
         // Check if project already exists
         if let Some(existing) = self.find_by_sonarqube_key(&sonar_project.key).await? {
@@ -27,7 +36,7 @@ impl ProjectService {
             return Ok(existing);
         }
 
-        let project_model = ProjectModel::from_sonarqube_project(sonar_project, None);
+        let project_model = ProjectModel::from_sonarqube_project(sonar_project, None, project_folder_path);
         
         let active_model = ProjectActiveModel {
             id: Set(project_model.id),
@@ -41,6 +50,7 @@ impl ProjectService {
             description: Set(project_model.description),
             language: Set(project_model.language),
             tags: Set(project_model.tags),
+            project_folder_path: Set(project_model.project_folder_path),
             is_active: Set(project_model.is_active),
         };
 
@@ -124,7 +134,7 @@ impl ProjectService {
             project.tags = Set(Some(tags));
         }
 
-        project.updated_at = Set(Utc::now());
+        project.updated_at = Set(Utc::now().into());
 
         match project.update(&self.db).await {
             Ok(updated_project) => {
@@ -146,7 +156,7 @@ impl ProjectService {
         };
 
         project.is_active = Set(false);
-        project.updated_at = Set(Utc::now());
+        project.updated_at = Set(Utc::now().into());
 
         match project.update(&self.db).await {
             Ok(updated_project) => {

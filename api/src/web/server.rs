@@ -9,7 +9,7 @@ use std::sync::Arc;
 use tracing::info;
 use crate::config::logger;
 use crate::sonarqube::{SonarQubeService, models::SonarQubeConfig};
-use crate::database::{DatabaseConfig, create_connection, test_connection, ProjectService};
+use crate::database::{DatabaseConfig, create_connection, test_connection, ProjectService, TokenService};
 
 pub async fn start() -> std::io::Result<()> {
     dotenvy::dotenv().ok();
@@ -60,6 +60,9 @@ pub async fn start() -> std::io::Result<()> {
     // Initialize Project Service
     let project_service = Arc::new(ProjectService::new((*db_connection).clone()));
 
+    // Initialize Token Service
+    let token_service = Arc::new(TokenService::new((*db_connection).clone()));
+
     // Initialize SonarQube service with database integration
     let sonar_service = match SonarQubeService::new(sonar_config, (*project_service).clone()) {
         Ok(service) => {
@@ -84,6 +87,7 @@ pub async fn start() -> std::io::Result<()> {
         App::new()
             .app_data(web::Data::new(sonar_service.clone()))
             .app_data(web::Data::new(project_service.clone()))
+            .app_data(web::Data::new(token_service.clone()))
             .wrap(middleware::Logger::default())
             .wrap(cors)
             .configure(init_config)
@@ -132,6 +136,15 @@ fn init_config(cfg: &mut web::ServiceConfig) {
                 web::resource("/version")
                     .route(web::get().to(crate::sonarqube::handlers::get_server_version))
             )
+            .service(
+                web::resource("/tokens")
+                    .route(web::post().to(crate::sonarqube::handlers::generate_token))
+                    .route(web::get().to(crate::sonarqube::handlers::list_tokens))
+            )
+            .service(
+                web::resource("/tokens/{token_name}")
+                    .route(web::delete().to(crate::sonarqube::handlers::revoke_token))
+            )
     )
     .service(
         web::scope("/api/database")
@@ -151,6 +164,14 @@ fn init_config(cfg: &mut web::ServiceConfig) {
             .service(
                 web::resource("/projects/sonarqube/{sonarqube_key}")
                     .route(web::get().to(crate::database::handlers::get_project_by_sonarqube_key))
+            )
+            .service(
+                web::resource("/tokens")
+                    .route(web::get().to(crate::sonarqube::handlers::get_tokens_from_db))
+            )
+            .service(
+                web::resource("/tokens/project/{project_key}")
+                    .route(web::get().to(crate::sonarqube::handlers::get_tokens_by_project))
             )
     );
 }

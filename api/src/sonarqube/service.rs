@@ -5,7 +5,8 @@ use crate::sonarqube::{
     client::SonarQubeClient,
     models::{
         CreateProjectRequest, CreateProjectResponse, GetIssuesResponse,
-        SonarQubeConfig, Issue,
+        SonarQubeConfig, Issue, CreateTokenRequest, CreateTokenResponse,
+        ListTokensResponse,
     },
 };
 use crate::database::ProjectService;
@@ -27,6 +28,7 @@ impl SonarQubeService {
         name: String,
         project_key: String,
         visibility: Option<String>,
+        project_folder_path: Option<String>,
     ) -> Result<CreateProjectResponse> {
         info!("Creating SonarQube project: {} with key: {}", name, project_key);
 
@@ -48,10 +50,11 @@ impl SonarQubeService {
 
         let response: CreateProjectResponse = self.client.post(&endpoint, &()).await?;
         
-        // Save project to database
-        match self.project_service.create_project(&response.project).await {
+        // Save project to database with folder path
+        match self.project_service.create_project_with_folder_path(&response.project, project_folder_path).await {
             Ok(db_project) => {
-                info!("Successfully saved project to database: {}", db_project.sonarqube_key);
+                info!("Successfully saved project to database: {} with folder path: {:?}", 
+                      db_project.sonarqube_key, db_project.project_folder_path);
             }
             Err(e) => {
                 warn!("Failed to save project to database: {}", e);
@@ -199,6 +202,66 @@ impl SonarQubeService {
                 Ok(false)
             }
         }
+    }
+
+    /// Generate a new SonarQube token
+    pub async fn generate_token(
+        &self,
+        name: String,
+        project_key: Option<String>,
+        description: Option<String>,
+        expires_at: Option<String>,
+    ) -> Result<CreateTokenResponse> {
+        info!("Generating SonarQube token: {}", name);
+
+        let request = CreateTokenRequest {
+            name: name.clone(),
+            project_key: project_key.clone(),
+            description: description.clone(),
+            expires_at,
+        };
+
+        // SonarQube uses query parameters for token generation
+        let mut endpoint = format!("user_tokens/generate?name={}", urlencoding::encode(&request.name));
+
+        if let Some(proj_key) = &request.project_key {
+            endpoint.push_str(&format!("&projectKey={}", urlencoding::encode(proj_key)));
+        }
+
+        if let Some(desc) = &request.description {
+            endpoint.push_str(&format!("&description={}", urlencoding::encode(desc)));
+        }
+
+        if let Some(expires) = &request.expires_at {
+            endpoint.push_str(&format!("&expiresAt={}", urlencoding::encode(expires)));
+        }
+
+        let response: CreateTokenResponse = self.client.post(&endpoint, &()).await?;
+        
+        info!("Successfully generated token: {}", response.name);
+        Ok(response)
+    }
+
+    /// List all SonarQube tokens
+    pub async fn list_tokens(&self) -> Result<ListTokensResponse> {
+        info!("Listing SonarQube tokens");
+
+        let response: ListTokensResponse = self.client.get("user_tokens/search").await?;
+        
+        info!("Retrieved {} tokens", response.tokens.len());
+        Ok(response)
+    }
+
+    /// Revoke a SonarQube token
+    pub async fn revoke_token(&self, name: String) -> Result<()> {
+        info!("Revoking SonarQube token: {}", name);
+
+        let endpoint = format!("user_tokens/revoke?name={}", urlencoding::encode(&name));
+        
+        self.client.post::<(), serde_json::Value>(&endpoint, &()).await?;
+        
+        info!("Successfully revoked token: {}", name);
+        Ok(())
     }
 }
 

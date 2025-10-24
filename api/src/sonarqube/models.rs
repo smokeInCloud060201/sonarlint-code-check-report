@@ -205,6 +205,50 @@ pub struct ErrorDetail {
     pub msg: String,
 }
 
+// Token Models
+#[derive(Debug, Serialize)]
+pub struct CreateTokenRequest {
+    pub name: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub project_key: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub description: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub expires_at: Option<String>,
+}
+
+#[derive(Debug, Deserialize, Serialize)]
+pub struct CreateTokenResponse {
+    pub token: String,
+    pub name: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub project_key: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub description: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub expires_at: Option<String>,
+}
+
+#[derive(Debug, Deserialize, Serialize)]
+pub struct TokenInfo {
+    pub name: String,
+    pub token: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub project_key: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub description: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub expires_at: Option<String>,
+    pub created_at: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub last_connection_date: Option<String>,
+}
+
+#[derive(Debug, Deserialize, Serialize)]
+pub struct ListTokensResponse {
+    pub tokens: Vec<TokenInfo>,
+}
+
 // Configuration Models
 #[derive(Debug, Clone)]
 pub struct SonarQubeConfig {

@@ -1,11 +1,11 @@
 use sea_orm::entity::prelude::*;
 use sea_orm::ActiveValue::Set;
 use serde::{Deserialize, Serialize};
-use chrono::{DateTime, Utc};
+use chrono::Utc;
 use uuid::Uuid;
 
 #[derive(Clone, Debug, PartialEq, DeriveEntityModel, Eq, Serialize, Deserialize)]
-#[sea_orm(table_name = "projects")]
+#[sea_orm(table_name = "api_projects")]
 pub struct Model {
     #[sea_orm(primary_key)]
     pub id: Uuid,
@@ -19,17 +19,19 @@ pub struct Model {
     
     pub qualifier: String,
     
-    pub created_at: DateTime<Utc>,
+    pub created_at: DateTimeWithTimeZone,
     
-    pub updated_at: DateTime<Utc>,
+    pub updated_at: DateTimeWithTimeZone,
     
-    pub sonarqube_created_at: Option<DateTime<Utc>>,
+    pub sonarqube_created_at: Option<DateTimeWithTimeZone>,
     
     pub description: Option<String>,
     
     pub language: Option<String>,
     
     pub tags: Option<String>, // JSON string for tags array
+
+    pub project_folder_path: Option<String>, 
     
     pub is_active: bool,
 }
@@ -41,8 +43,8 @@ impl ActiveModelBehavior for ActiveModel {
     fn new() -> Self {
         Self {
             id: Set(Uuid::new_v4()),
-            created_at: Set(Utc::now()),
-            updated_at: Set(Utc::now()),
+            created_at: Set(Utc::now().into()),
+            updated_at: Set(Utc::now().into()),
             is_active: Set(true),
             ..Default::default()
         }
@@ -52,7 +54,8 @@ impl ActiveModelBehavior for ActiveModel {
 impl Model {
     pub fn from_sonarqube_project(
         sonar_project: &crate::sonarqube::models::ProjectInfo,
-        sonarqube_created_at: Option<DateTime<Utc>>,
+        sonarqube_created_at: Option<DateTimeWithTimeZone>,
+        project_folder_path: Option<String>,
     ) -> Self {
         Self {
             id: Uuid::new_v4(),
@@ -60,12 +63,13 @@ impl Model {
             name: sonar_project.name.clone(),
             visibility: sonar_project.visibility.clone(),
             qualifier: sonar_project.qualifier.clone(),
-            created_at: Utc::now(),
-            updated_at: Utc::now(),
+            created_at: Utc::now().into(),
+            updated_at: Utc::now().into(),
             sonarqube_created_at,
             description: None,
             language: None,
             tags: None,
+            project_folder_path,
             is_active: true,
         }
     }
