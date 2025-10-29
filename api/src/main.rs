@@ -1,7 +1,7 @@
 mod web;
 mod config;
-mod sonarqube;
 mod database;
+mod sonarqube;
 
 #[actix_web::main]
 async fn main() -> std::io::Result<()> {

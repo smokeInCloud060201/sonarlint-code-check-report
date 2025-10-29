@@ -1,6 +1,6 @@
 #!/bin/bash
 
-token=sqp_ad3ae0a278bd22c49d42022350279d27c8ac2500
+token=sqp_6c61e6dc2cf01510d398dba75c6a2717a9c59648
 component=caspersky
 page_size=500
 project_name=$component
