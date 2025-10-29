@@ -92,7 +92,7 @@ impl ProjectService {
 
     pub async fn create_project(&self, request: CreateProjectRequest) -> Result<ProjectResponse, DbErr> {
         let now = Utc::now().naive_utc();
-        let sonar_host_url = env::var("SONAR_HOST_URL").unwrap_or_else(|_| "http://localhost:9000".to_string());
+        let sonar_host_url = "http://localhost:9000".to_string();
 
         let project = ProjectActiveModel {
             project_key: Set(request.project_key),

@@ -11,6 +11,8 @@ services:
       SONAR_JDBC_PASSWORD: sonar
     networks:
       - sonarcute-network
+    ports:
+      - "9000:9000"
     volumes:
       - sonarqube_data:/opt/sonarqube/data
       - sonarqube_logs:/opt/sonarqube/logs
@@ -23,8 +25,6 @@ services:
       POSTGRES_USER: sonar
       POSTGRES_PASSWORD: sonar
       POSTGRES_DB: sonarqube
-    ports:
-      - 5432:5432
     networks:
       - sonarcute-network
     volumes:
