@@ -10,7 +10,9 @@ import {
   Code,
   TestTube,
   FileText,
-  Download
+  Download,
+  Trash2,
+  X
 } from 'lucide-react';
 import type {Project} from '../types/api';
 import { projectApi } from '../services/api';
@@ -21,15 +23,19 @@ import { getMockProjectResults, getMockSonarCommand, isTourCurrentlyActive } fro
 interface ProjectCardProps {
   project: Project;
   onProjectUpdated?: (project: Project) => void;
+  onProjectDeleted?: () => void;
 }
 
-export const ProjectCard = ({ project }: ProjectCardProps) => {
+export const ProjectCard = ({ project, onProjectDeleted }: ProjectCardProps) => {
   const [command, setCommand] = useState<string | null>(null);
   const [results, setResults] = useState<any>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [copied, setCopied] = useState(false);
   const [isIssuesModalOpen, setIsIssuesModalOpen] = useState(false);
+  const [isDeleteModalOpen, setIsDeleteModalOpen] = useState(false);
+  const [isDeleting, setIsDeleting] = useState(false);
+  const [deleteConfirmationText, setDeleteConfirmationText] = useState('');
 
   const handleGenerateCommand = async () => {
     try {
@@ -93,6 +99,40 @@ export const ProjectCard = ({ project }: ProjectCardProps) => {
     }
   };
 
+  const handleDeleteProject = async () => {
+    // Validate that confirmation text matches project name
+    if (deleteConfirmationText !== project.project_name) {
+      setError('Project name does not match');
+      return;
+    }
+
+    try {
+      setIsDeleting(true);
+      setError(null);
+      
+      await projectApi.deleteProject(project.project_path);
+      
+      // Reset confirmation text and close modal
+      setDeleteConfirmationText('');
+      setIsDeleteModalOpen(false);
+      
+      // Notify parent component to refresh the project list
+      if (onProjectDeleted) {
+        onProjectDeleted();
+      }
+    } catch (err: any) {
+      const errorMessage = err.response?.data?.error || err.response?.data?.details || 'Failed to delete project';
+      setError(errorMessage);
+      setIsDeleting(false);
+    }
+  };
+
+  const handleDeleteModalClose = () => {
+    setIsDeleteModalOpen(false);
+    setDeleteConfirmationText('');
+    setError(null);
+  };
+
   const formatDate = (dateString: string) => {
     return new Date(dateString).toLocaleDateString('en-US', {
       year: 'numeric',
@@ -108,20 +148,29 @@ export const ProjectCard = ({ project }: ProjectCardProps) => {
       {/* Header */}
       <div className="px-6 py-4 border-b border-gray-200">
         <div className="flex items-center justify-between">
-          <div className="flex items-center">
-            <FolderOpen className="h-5 w-5 text-blue-600 mr-2" />
+          <div className="flex items-center flex-1 min-w-0">
+            <FolderOpen className="h-5 w-5 text-blue-600 mr-2 flex-shrink-0" />
             <h3 className="text-lg font-semibold text-gray-900 truncate">
               {project.project_name}
             </h3>
           </div>
-          <span className={`px-2 py-1 text-xs font-medium rounded-full ${
-            project.language === 'java' ? 'bg-red-100 text-red-800' :
-            project.language === 'javascript' ? 'bg-yellow-100 text-yellow-800' :
-            project.language === 'typescript' ? 'bg-blue-100 text-blue-800' :
-            'bg-gray-100 text-gray-800'
-          }`}>
-            {project.language.toUpperCase()}
-          </span>
+          <div className="flex items-center gap-2 ml-2">
+            <span className={`px-2 py-1 text-xs font-medium rounded-full flex-shrink-0 ${
+              project.language === 'java' ? 'bg-red-100 text-red-800' :
+              project.language === 'javascript' ? 'bg-yellow-100 text-yellow-800' :
+              project.language === 'typescript' ? 'bg-blue-100 text-blue-800' :
+              'bg-gray-100 text-gray-800'
+            }`}>
+              {project.language.toUpperCase()}
+            </span>
+            <button
+              onClick={() => setIsDeleteModalOpen(true)}
+              className="p-1.5 text-gray-400 hover:text-red-600 hover:bg-red-50 rounded-md transition-colors"
+              title="Delete project"
+            >
+              <Trash2 className="h-5 w-5" />
+            </button>
+          </div>
         </div>
         <p className="mt-1 text-sm text-gray-600 truncate">
           {project.project_path}
@@ -261,6 +310,107 @@ export const ProjectCard = ({ project }: ProjectCardProps) => {
         project={project}
         results={results}
       />
+
+      {/* Delete Confirmation Modal */}
+      {isDeleteModalOpen && (
+        <div className="fixed inset-0 bg-gray-600 bg-opacity-50 overflow-y-auto h-full w-full z-50 flex items-center justify-center">
+          <div className="relative bg-white rounded-lg shadow-xl max-w-md w-full mx-4">
+            <div className="p-6">
+              {/* Header */}
+              <div className="flex items-center justify-between mb-4">
+                <div className="flex items-center">
+                  <div className="flex items-center justify-center h-12 w-12 rounded-full bg-red-100 mr-3">
+                    <Trash2 className="h-6 w-6 text-red-600" />
+                  </div>
+                  <h3 className="text-lg font-medium text-gray-900">
+                    Delete Project
+                  </h3>
+                </div>
+                <button
+                  onClick={handleDeleteModalClose}
+                  className="text-gray-400 hover:text-gray-600"
+                  disabled={isDeleting}
+                >
+                  <X className="h-6 w-6" />
+                </button>
+              </div>
+
+              {/* Content */}
+              <div className="mb-6">
+                <p className="text-sm text-gray-600 mb-4">
+                  Are you sure you want to delete this project? This action cannot be undone.
+                </p>
+                <div className="bg-gray-50 rounded-md p-3 mb-4">
+                  <p className="text-sm font-medium text-gray-900 mb-1">{project.project_name}</p>
+                  <p className="text-xs text-gray-600">{project.project_path}</p>
+                </div>
+                <p className="text-xs text-gray-500 mb-4">
+                  This will delete the project from both SonarQube and the local database.
+                </p>
+                
+                {/* Confirmation Input */}
+                <div>
+                  <label htmlFor="delete-confirmation" className="block text-sm font-medium text-gray-700 mb-2">
+                    Type <span className="font-semibold text-gray-900">{project.project_name}</span> to confirm:
+                  </label>
+                  <input
+                    id="delete-confirmation"
+                    type="text"
+                    value={deleteConfirmationText}
+                    onChange={(e) => {
+                      setDeleteConfirmationText(e.target.value);
+                      setError(null); // Clear error when typing
+                    }}
+                    placeholder={project.project_name}
+                    disabled={isDeleting}
+                    className="w-full px-3 py-2 border border-gray-300 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-red-500 focus:border-red-500 disabled:bg-gray-100 disabled:cursor-not-allowed"
+                    autoFocus
+                  />
+                </div>
+              </div>
+
+              {/* Error Message */}
+              {error && (
+                <div className="mb-4 bg-red-50 border border-red-200 rounded-md p-3">
+                  <div className="flex">
+                    <AlertCircle className="h-5 w-5 text-red-400" />
+                    <div className="ml-3">
+                      <p className="text-sm text-red-800">{error}</p>
+                    </div>
+                  </div>
+                </div>
+              )}
+
+              {/* Actions */}
+              <div className="flex justify-end space-x-3">
+                <button
+                  onClick={handleDeleteModalClose}
+                  disabled={isDeleting}
+                  className="px-4 py-2 text-sm font-medium text-gray-700 bg-white border border-gray-300 rounded-md hover:bg-gray-50 disabled:opacity-50"
+                >
+                  Cancel
+                </button>
+                <button
+                  onClick={handleDeleteProject}
+                  disabled={isDeleting || deleteConfirmationText !== project.project_name}
+                  className="px-4 py-2 text-sm font-medium text-white bg-red-600 border border-transparent rounded-md hover:bg-red-700 disabled:opacity-50 disabled:cursor-not-allowed flex items-center"
+                >
+                  {isDeleting ? (
+                    <>
+                      <span className="mr-2">Deleting...</span>
+                    </>
+                  ) : (
+                    <>
+                      <Trash2 className="h-4 w-4 mr-2" />
+                      Delete Project
+                    </>
+                  )}
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 };

@@ -1,0 +1,59 @@
+version: '3.8'
+
+services:
+  sonarcuteapi:
+    image: sonarcute-api:latest
+    container_name: sonarcute-api
+    networks:
+      - sonarcute-network
+    environment:
+      SERVER_HOST: 0.0.0.0
+      SERVER_PORT: 8080
+      DATABASE_URL: postgresql://sonar:sonar@sonarcutedb:5432/sonarcute
+      SONAR_HOST_URL: http://sonarqube:9000
+    ports:
+      - "8888:8080"
+
+  token-generator:
+    image: alpine:latest
+    container_name: token-generator
+    depends_on:
+      - sonarcuteapi
+    networks:
+      - sonarcute-network
+    volumes:
+      - ./generate_tokens.sh:/usr/local/bin/generate_tokens.sh
+    entrypoint: >
+      sh -c "
+        echo ' Installing curl...' &&
+        apk add --no-cache curl >/dev/null &&
+        echo ' Waiting for sonarcuteapi to be ready...' &&
+        until nc -z sonarcuteapi 8080; do sleep 2; done &&
+        echo ' sonarcuteapi is up! Running token script...' &&
+        chmod +x /usr/local/bin/generate_tokens.sh &&
+        cd /usr/local/bin &&
+        ./generate_tokens.sh &&
+        echo ' Tokens generated successfully!'
+      "
+    restart: "no"
+    deploy:
+      restart_policy:
+        condition: none
+    profiles:
+      - init
+
+  web:
+    image: sonarcute-web:latest
+    container_name: sonarcute-web
+    networks:
+      - sonarcute-network
+    depends_on:
+      - sonarcuteapi
+    expose:
+      - "80"
+    ports:
+      - "8889:80"
+
+networks:
+  sonarcute-network:
+    external: true

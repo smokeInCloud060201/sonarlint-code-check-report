@@ -38,6 +38,7 @@ pub async fn start() -> std::io::Result<()> {
                     .route("/admin-token", web::post().to(handlers::create_admin_token))
                     .route("/projects", web::get().to(handlers::get_all_projects))
                     .route("/projects", web::post().to(handlers::create_project))
+                    .route("/projects", web::delete().to(handlers::delete_project))
                     .route("/results", web::post().to(handlers::get_project_results))
                     .route("/generate-command", web::post().to(handlers::generate_sonar_command))
             )

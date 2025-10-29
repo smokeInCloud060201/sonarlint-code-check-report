@@ -33,7 +33,7 @@ export const exportIssuesToPDF = (project: Project, results: ProjectResults) => 
   doc.setTextColor(255, 255, 255); // White text
   doc.setFontSize(24);
   doc.setFont('helvetica', 'bold');
-  doc.text('SonarQube Issues Report', 20, 25);
+  doc.text('SonarCute Issues Report', 20, 25);
   
   // Subtitle
   doc.setFontSize(16);

@@ -10,6 +10,7 @@ pub struct Model {
     pub username: String,
     pub token_name: String,
     pub token_value: String,
+    pub token_type: String,
     pub sonar_host_url: String,
     pub created_at: NaiveDateTime,
     pub updated_at: NaiveDateTime,

@@ -254,13 +254,20 @@ pub async fn get_project_quality_gate(&self, project_key: &str) -> Result<Qualit
         Ok(quality_gate_response)
 }
 
-pub async fn generate_admin_token(&self, username: &str, password: &str, token_name: &str) -> Result<String> {
+    pub async fn generate_admin_token(&self, username: &str, password: &str, token_name: &str, token_type: &str) -> Result<String> {
         let url = format!("{}/api/user_tokens/generate", self.base_url);
+        
+        // Validate and set token type
+        let valid_token_type = if token_type == "GLOBAL_ANALYSIS_TOKEN" {
+            "GLOBAL_ANALYSIS_TOKEN"
+        } else {
+            "USER_TOKEN" // Default to USER_TOKEN
+        };
         
         // SonarQube API expects form-encoded data
         let params = [
             ("name", token_name.to_string()),
-            ("type", "GLOBAL_ANALYSIS_TOKEN".to_string()),
+            ("type", valid_token_type.to_string()),
         ];
 
         let response = self.client
@@ -277,5 +284,28 @@ pub async fn generate_admin_token(&self, username: &str, password: &str, token_n
 
         let token_response: TokenResponse = response.json().await?;
         Ok(token_response.token)
+    }
+
+    pub async fn delete_project(&self, project_key: &str) -> Result<()> {
+        let url = format!("{}/api/projects/delete", self.base_url);
+        
+        // SonarQube API expects form-encoded data
+        let params = [
+            ("project", project_key),
+        ];
+
+        let response = self.client
+            .post(&url)
+            .header("Authorization", format!("Basic {}", general_purpose::STANDARD.encode(format!("{}:", self.admin_token))))
+            .form(&params)
+            .send()
+            .await?;
+
+        if !response.status().is_success() {
+            let error_text = response.text().await?;
+            return Err(anyhow::anyhow!("Failed to delete project: {}", error_text));
+        }
+
+        Ok(())
     }
 }

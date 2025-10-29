@@ -7,6 +7,7 @@ import { ProjectCard } from '../components/ProjectCard';
 import { TourButton } from '../components/TourButton';
 import { startTour } from '../services/tourService';
 import { getMockProjects, isTourCurrentlyActive, injectMockDataForTour } from '../services/mockTourData';
+import Logo from '../assets/logo.png';
 
 export const ProjectListPage = () => {
   const [projects, setProjects] = useState<Project[]>([]);
@@ -73,13 +74,18 @@ export const ProjectListPage = () => {
     );
   };
 
+  const handleProjectDeleted = () => {
+    // Refresh the project list after deletion
+    fetchProjects();
+  };
+
   return (
     <div className="min-h-screen bg-gray-50">
       <header className="bg-white shadow-sm border-b">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
           <div className="flex justify-between items-center h-16">
             <div className="flex items-center">
-              <FolderOpen className="h-8 w-8 text-blue-600 mr-3" />
+                <img src={Logo} alt="SonarCute Logo" className="h-8 w-8 text-blue-600 mr-3" />
               <h1 className="text-2xl font-bold text-gray-900">
                 SonarCute Projects
               </h1>
@@ -147,6 +153,7 @@ export const ProjectListPage = () => {
                 <ProjectCard
                   project={project}
                   onProjectUpdated={handleProjectUpdated}
+                  onProjectDeleted={handleProjectDeleted}
                 />
               </div>
             ))}

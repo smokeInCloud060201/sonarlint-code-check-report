@@ -1,9 +1,18 @@
 import {driver} from 'driver.js';
 import 'driver.js/dist/driver.css';
 import { removeMockDataAfterTour } from './mockTourData';
+import Step1 from'../assets/step_1.png'
+import Step2 from'../assets/step_2.png'
+import Step3 from'../assets/step_3.png'
+import Step4 from'../assets/step_4.png'
+import Step5 from'../assets/step_5.png'
+import Step6 from'../assets/step_6.png'
+import Step7 from'../assets/step_7.png'
+import Introduce from'../assets/sonar_introduce.png'
+import Avatar from'../assets/sonar_avatar.jpg'
 
 export interface TourStep {
-  element: string;
+  element?: string;
   popover: {
     title: string;
     description: string;
@@ -12,14 +21,97 @@ export interface TourStep {
   };
 }
 
+const tourGuideImages: Array<{ image: any; position: 'left' | 'right' }> = [
+  { image: 'null', position: 'left' }, // Intro step
+  { image: Step1, position: 'left' },
+  { image: Step2, position: 'right' },
+  { image: Step3, position: 'right' },
+  { image: Step4, position: 'right' },
+  { image: Step5, position: 'left' },
+  { image: Step6, position: 'right' },
+  { image: Step7, position: 'left' },
+];
+
+// Helper function to create tour guide image element
+const createTourGuideImage = (imagePath: string, position: 'left' | 'right' = 'left'): HTMLElement => {
+  const container = document.createElement('div');
+  container.setAttribute('data-tour-guide-image', 'true');
+  container.style.cssText = `
+    position: fixed;
+    ${position}: 20px;
+    bottom: 120px;
+    scale: 2;
+    z-index: 10000;
+    pointer-events: none;
+    opacity: 0;
+    transition: opacity 0.3s ease-in-out;
+  `;
+  
+  const img = document.createElement('img');
+  img.src = imagePath;
+  img.alt = 'Sonar Tour Guide';
+  img.style.cssText = `
+    width: 250px;
+    height: auto;
+    max-height: 350px;
+    object-fit: contain;
+    filter: drop-shadow(0 4px 6px rgba(0, 0, 0, 0.1));
+  `;
+  
+  container.appendChild(img);
+  return container;
+};
+
+// Clean up tour guide images
+const cleanupTourGuideImages = () => {
+  const tourGuideImages = document.querySelectorAll('[data-tour-guide-image]');
+  tourGuideImages.forEach(img => {
+    (img as HTMLElement).style.opacity = '0';
+    setTimeout(() => img.remove(), 300);
+  });
+};
+
+// Show tour guide image for specific step
+const showTourGuideImage = (stepIndex: number) => {
+  cleanupTourGuideImages();
+  if (stepIndex >= 0 && stepIndex < tourGuideImages.length) {
+    const config = tourGuideImages[stepIndex];
+    // Skip showing tour guide image if image is 'null' or empty (for intro step)
+    if (config.image && config.image !== 'null' && config.image.trim() !== '') {
+      const imageElement = createTourGuideImage(config.image, config.position);
+      document.body.appendChild(imageElement);
+      // Fade in
+      setTimeout(() => {
+        imageElement.style.opacity = '1';
+      }, 10);
+    }
+  }
+};
+
 export const tourSteps: TourStep[] = [
+  {
+    popover: {
+      title: '👋 Hello! I\'m Sonar',
+      description: `
+        <div style="text-align: center; padding: 20px;">
+          <div style="margin-bottom: 20px;">
+            <img src="${Introduce}" alt="Sonar" style="width: 200px; height: auto; max-height: 300px; object-fit: contain; margin: 0 auto; display: block; border: none !important; box-shadow: none !important;" />
+          </div>
+          <p style="font-size: 18px; font-weight: 500; margin-bottom: 12px; color: #1f2937;">Hi there! I'm Sonar, your code quality tour guide! 👋</p>
+          <p style="font-size: 14px; color: #6b7280; line-height: 1.6;">I'm here to help you explore our application and show you all the amazing features we have for managing your SonarQube projects. Let's get started on this journey together!</p>
+        </div>
+      `,
+      side: 'bottom',
+      align: 'center'
+    }
+  },
   {
     element: '[data-tour="add-project"]',
     popover: {
       title: '👋 Welcome to SonarQube Code Check Report!',
       description: `
         <div style="display: flex; align-items: center; gap: 12px; margin-bottom: 12px;">
-          <img src="/src/assets/sonar.jpg" alt="Sonar" style="width: 60px; height: 60px; border-radius: 50%; object-fit: cover;" />
+          <img src="${Avatar}" alt="Sonar" style="width: 60px; height: 60px; border-radius: 50%; object-fit: cover;" />
           <div>
             <p style="margin: 0; font-weight: 500;">Hi! I'm Sonar, your code quality guide.</p>
             <p style="margin: 4px 0 0 0; font-size: 13px; color: #6b7280;">Let me show you around our application!</p>
@@ -37,7 +129,7 @@ export const tourSteps: TourStep[] = [
       title: '📁 Project Management',
       description: `
         <div style="display: flex; align-items: center; gap: 12px; margin-bottom: 12px;">
-          <img src="/src/assets/sonar.jpg" alt="Sonar" style="width: 50px; height: 50px; border-radius: 50%; object-fit: cover;" />
+          <img src="${Avatar}" alt="Sonar" style="width: 50px; height: 50px; border-radius: 50%; object-fit: cover;" />
           <div>
             <p style="margin: 0; font-weight: 500;">Here you can see all your projects!</p>
           </div>
@@ -54,7 +146,7 @@ export const tourSteps: TourStep[] = [
       title: '⚡ Generate Sonar Command',
       description: `
         <div style="display: flex; align-items: center; gap: 12px; margin-bottom: 12px;">
-          <img src="/src/assets/sonar.jpg" alt="Sonar" style="width: 50px; height: 50px; border-radius: 50%; object-fit: cover;" />
+          <img src="${Avatar}" alt="Sonar" style="width: 50px; height: 50px; border-radius: 50%; object-fit: cover;" />
           <div>
             <p style="margin: 0; font-weight: 500;">Ready to scan your code?</p>
           </div>
@@ -71,7 +163,7 @@ export const tourSteps: TourStep[] = [
       title: '📊 Get Scan Results',
       description: `
         <div style="display: flex; align-items: center; gap: 12px; margin-bottom: 12px;">
-          <img src="/src/assets/sonar.jpg" alt="Sonar" style="width: 50px; height: 50px; border-radius: 50%; object-fit: cover;" />
+          <img src="${Avatar}" alt="Sonar" style="width: 50px; height: 50px; border-radius: 50%; object-fit: cover;" />
           <div>
             <p style="margin: 0; font-weight: 500;">Let's see what we found!</p>
           </div>
@@ -97,7 +189,7 @@ export const tourSteps: TourStep[] = [
       title: '🔍 View Issues',
       description: `
         <div style="display: flex; align-items: center; gap: 12px; margin-bottom: 12px;">
-          <img src="/src/assets/sonar.jpg" alt="Sonar" style="width: 50px; height: 50px; border-radius: 50%; object-fit: cover;" />
+          <img src="${Avatar}" alt="Sonar" style="width: 50px; height: 50px; border-radius: 50%; object-fit: cover;" />
           <div>
             <p style="margin: 0; font-weight: 500;">Let's dive into the details!</p>
           </div>
@@ -114,7 +206,7 @@ export const tourSteps: TourStep[] = [
       title: '📄 Export to PDF',
       description: `
         <div style="display: flex; align-items: center; gap: 12px; margin-bottom: 12px;">
-          <img src="/src/assets/sonar.jpg" alt="Sonar" style="width: 50px; height: 50px; border-radius: 50%; object-fit: cover;" />
+          <img src="${Avatar}" alt="Sonar" style="width: 50px; height: 50px; border-radius: 50%; object-fit: cover;" />
           <div>
             <p style="margin: 0; font-weight: 500;">Share your results!</p>
           </div>
@@ -131,7 +223,7 @@ export const tourSteps: TourStep[] = [
       title: '🚦 Quality Gate Status',
       description: `
         <div style="display: flex; align-items: center; gap: 12px; margin-bottom: 12px;">
-          <img src="/src/assets/sonar.jpg" alt="Sonar" style="width: 50px; height: 50px; border-radius: 50%; object-fit: cover;" />
+          <img src="${Avatar}" alt="Sonar" style="width: 50px; height: 50px; border-radius: 50%; object-fit: cover;" />
           <div>
             <p style="margin: 0; font-weight: 500;">Keep your code quality high!</p>
           </div>
@@ -152,6 +244,7 @@ export const startTour = () => {
     removeMockDataAfterTour();
     localStorage.setItem('sonar-tour-completed', 'true');
     driverObj.destroy();
+    window.location.reload();
   };
   
   driverObj = driver({
@@ -169,9 +262,13 @@ export const startTour = () => {
     onHighlighted: (_element, _step) => {
       const currentIndex = driverObj.getActiveIndex();
 
-      isWaitingForUserAction = currentIndex === 3;
+      // Show tour guide image for current step
+      showTourGuideImage(currentIndex);
 
-      if (currentIndex === 3) {
+      // Step 4 is the "get-results" step (index 4 after intro step)
+      isWaitingForUserAction = currentIndex === 4;
+
+      if (currentIndex === 4) {
         const nextButton = document.querySelector('.driver-popover-next-btn');
         if (nextButton instanceof HTMLButtonElement) {
           nextButton.disabled = true;
@@ -224,6 +321,7 @@ export const startTour = () => {
   driverObj.destroy = () => {
     clearInterval(checkLastStep);
     document.removeEventListener('click', handleGetResultsClick);
+    cleanupTourGuideImages();
     originalDestroy();
   };
 

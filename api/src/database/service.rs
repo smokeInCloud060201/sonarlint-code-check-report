@@ -1,3 +1,4 @@
+use std::env;
 use crate::database::entities::Entity as ProjectEntity;
 use crate::database::entities::Model as ProjectModel;
 use crate::database::entities::ActiveModel as ProjectActiveModel;
@@ -28,6 +29,7 @@ pub struct CreateAdminTokenRequest {
     pub username: String,
     pub password: String,
     pub token_name: String,
+    pub token_type: String, // "USER_TOKEN" or "GLOBAL_ANALYSIS_TOKEN"
     pub sonar_host_url: String,
 }
 
@@ -37,6 +39,7 @@ pub struct AdminTokenResponse {
     pub username: String,
     pub token_name: String,
     pub token_value: String,
+    pub token_type: String,
     pub sonar_host_url: String,
     pub created_at: chrono::NaiveDateTime,
     pub updated_at: chrono::NaiveDateTime,
@@ -89,13 +92,14 @@ impl ProjectService {
 
     pub async fn create_project(&self, request: CreateProjectRequest) -> Result<ProjectResponse, DbErr> {
         let now = Utc::now().naive_utc();
-        
+        let sonar_host_url = env::var("SONAR_HOST_URL").unwrap_or_else(|_| "http://localhost:9000".to_string());
+
         let project = ProjectActiveModel {
             project_key: Set(request.project_key),
             project_name: Set(request.project_name),
             project_path: Set(request.project_path),
             sonar_token: Set(String::new()), // Will be set after SonarQube token creation
-            sonar_host_url: Set("http://localhost:9000".to_string()), // Default SonarQube URL
+            sonar_host_url: Set(sonar_host_url), // Default SonarQube URL
             language: Set(request.language),
             sources_path: Set(request.sources_path),
             tests_path: Set(request.tests_path),
@@ -139,10 +143,18 @@ impl ProjectService {
     pub async fn create_admin_token(&self, request: CreateAdminTokenRequest) -> Result<AdminTokenResponse, DbErr> {
         let now = Utc::now().naive_utc();
         
+        // Validate token_type
+        let token_type = if request.token_type == "GLOBAL_ANALYSIS_TOKEN" || request.token_type == "USER_TOKEN" {
+            request.token_type
+        } else {
+            "USER_TOKEN".to_string() // Default to USER_TOKEN if invalid
+        };
+        
         let admin_token = AdminTokenActiveModel {
             username: Set(request.username),
             token_name: Set(request.token_name),
             token_value: Set(String::new()), // Will be set after SonarQube token creation
+            token_type: Set(token_type),
             sonar_host_url: Set(request.sonar_host_url),
             created_at: Set(now),
             updated_at: Set(now),
@@ -155,15 +167,17 @@ impl ProjectService {
             username: result.username,
             token_name: result.token_name,
             token_value: result.token_value,
+            token_type: result.token_type,
             sonar_host_url: result.sonar_host_url,
             created_at: result.created_at,
             updated_at: result.updated_at,
         })
     }
 
-    pub async fn get_admin_token(&self, sonar_host_url: &str) -> Result<Option<String>, DbErr> {
+    pub async fn get_admin_token_by_type(&self, sonar_host_url: &str, token_type: &str) -> Result<Option<String>, DbErr> {
         let admin_token = AdminTokenEntity::find()
             .filter(crate::database::admin_token_entity::Column::SonarHostUrl.eq(sonar_host_url))
+            .filter(crate::database::admin_token_entity::Column::TokenType.eq(token_type))
             .one(&self.db)
             .await?;
 
@@ -181,5 +195,21 @@ impl ProjectService {
         }
 
         Ok(())
+    }
+
+    pub async fn delete_project_by_path(&self, project_path: &str) -> Result<Option<ProjectResponse>, DbErr> {
+        let project = ProjectEntity::find()
+            .filter(crate::database::entities::Column::ProjectPath.eq(project_path))
+            .one(&self.db)
+            .await?;
+
+        if let Some(project) = project {
+            let project_response = ProjectResponse::from(project.clone());
+            let project_id = project.id;
+            ProjectEntity::delete_by_id(project_id).exec(&self.db).await?;
+            Ok(Some(project_response))
+        } else {
+            Ok(None)
+        }
     }
 }

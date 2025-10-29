@@ -46,7 +46,6 @@ export const AddProjectModal = ({ isOpen, onClose, onProjectAdded }: AddProjectM
       const newProject = await projectApi.createProject(projectData);
       onProjectAdded(newProject);
       
-      // Reset form
       setSelectedPath('');
       setProjectName('');
       setLanguage('java');
@@ -62,46 +61,18 @@ export const AddProjectModal = ({ isOpen, onClose, onProjectAdded }: AddProjectM
 
   const handleFolderSelect = async () => {
     try {
-      // Use File System Access API for native folder selection (Chrome, Edge, Opera)
-      // This doesn't upload files, just gives access to folder path
       if ('showDirectoryPicker' in window) {
         const directoryHandle = await (window as any).showDirectoryPicker({
-          mode: 'read' // Read-only mode - we only need the folder path
+          mode: 'read'
         });
         
-        // Get the folder name from the handle
         const folderName = directoryHandle.name;
-
-        console.log("folderName ", folderName, directoryHandle, directoryHandle.entries());
-
-        
-        // Try to get more path information by querying the handle
-        // Note: Browsers don't expose full file system paths for security
-        // We'll use the folder name and user can edit to add full path
         setSelectedPath(folderName);
-
-        try {
-          const dirHandle = await (window as any).showDirectoryPicker();
-          console.log('Folder name:', dirHandle.name);
-      
-          // list files
-          for await (const [name, handle] of dirHandle.entries()) {
-            console.log(name, handle.kind);
-          }
-      
-          // store handle for later
-          localStorage.setItem('folderPermission', JSON.stringify({ name: dirHandle.name }));
-        } catch (err) {
-          console.error('User cancelled or permission denied', err);
-        }
         
-        // Auto-generate project name from folder name
         if (!projectName) {
           setProjectName(folderName);
         }
       } else {
-        // Fallback for browsers without File System Access API
-        // Show a message that they need to type the path manually
         const fullPath = prompt(
           'Please enter the full path to your project folder:',
           selectedPath || ''
@@ -115,7 +86,6 @@ export const AddProjectModal = ({ isOpen, onClose, onProjectAdded }: AddProjectM
         }
       }
     } catch (error: any) {
-      // User cancelled the selection
       if (error.name !== 'AbortError') {
         console.error('Error selecting folder:', error);
         alert('Failed to select folder. Please enter the path manually.');

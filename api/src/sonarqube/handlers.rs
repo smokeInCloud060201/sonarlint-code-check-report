@@ -9,12 +9,13 @@ pub async fn create_project(
 ) -> Result<HttpResponse> {
     let sonar_host_url = env::var("SONAR_HOST_URL").unwrap_or_else(|_| "http://localhost:9000".to_string());
     
-    // Get admin token from database
-    let admin_token = match project_service.get_admin_token(&sonar_host_url).await {
+    // Get USER_TOKEN for admin operations (create/delete projects)
+    let admin_token = match project_service.get_admin_token_by_type(&sonar_host_url, "USER_TOKEN").await {
         Ok(Some(token)) => token,
         Ok(None) => {
             return Ok(HttpResponse::BadRequest().json(serde_json::json!({
-                "error": "No admin token found for this SonarQube instance. Please create an admin token first."
+                "error": "No USER_TOKEN found for this SonarQube instance. Please create a USER_TOKEN first.",
+                "suggestion": "Use POST /api/admin-token with token_type: 'USER_TOKEN' (must be created with a user that has admin privileges)"
             })));
         }
         Err(e) => {
@@ -83,8 +84,15 @@ pub async fn create_admin_token(
 ) -> Result<HttpResponse> {
     let sonar_client = SonarQubeClient::new(req.sonar_host_url.clone(), String::new());
 
-    // Generate admin token in SonarQube
-    let token_value = match sonar_client.generate_admin_token(&req.username, &req.password, &req.token_name).await {
+    // Validate token_type
+    let token_type = if req.token_type == "GLOBAL_ANALYSIS_TOKEN" {
+        "GLOBAL_ANALYSIS_TOKEN"
+    } else {
+        "USER_TOKEN"
+    };
+
+    // Generate admin token in SonarQube with the specified type
+    let token_value = match sonar_client.generate_admin_token(&req.username, &req.password, &req.token_name, token_type).await {
         Ok(token) => token,
         Err(e) => {
             return Ok(HttpResponse::InternalServerError().json(serde_json::json!({
@@ -93,8 +101,12 @@ pub async fn create_admin_token(
         }
     };
 
+    // Create admin token request with validated token_type
+    let mut create_request = req.into_inner();
+    create_request.token_type = token_type.to_string();
+
     // Create admin token in our database
-    let mut admin_token_response = match project_service.create_admin_token(req.into_inner()).await {
+    let mut admin_token_response = match project_service.create_admin_token(create_request).await {
         Ok(admin_token) => admin_token,
         Err(e) => {
             return Ok(HttpResponse::InternalServerError().json(serde_json::json!({
@@ -136,12 +148,13 @@ pub async fn get_project_results(
     // Get results from SonarQube
     let sonar_host_url = env::var("SONAR_HOST_URL").unwrap_or_else(|_| "http://localhost:9000".to_string());
     
-    // Get admin token from database
-    let admin_token = match project_service.get_admin_token(&sonar_host_url).await {
+    // Get GLOBAL_ANALYSIS_TOKEN for fetching issues, coverage, etc.
+    let admin_token = match project_service.get_admin_token_by_type(&sonar_host_url, "GLOBAL_ANALYSIS_TOKEN").await {
         Ok(Some(token)) => token,
         Ok(None) => {
             return Ok(HttpResponse::BadRequest().json(serde_json::json!({
-                "error": "No admin token found for this SonarQube instance. Please create an admin token first."
+                "error": "No GLOBAL_ANALYSIS_TOKEN found for this SonarQube instance. Please create a GLOBAL_ANALYSIS_TOKEN first.",
+                "suggestion": "Use POST /api/admin-token with token_type: 'GLOBAL_ANALYSIS_TOKEN'"
             })));
         }
         Err(e) => {
@@ -246,7 +259,7 @@ pub async fn generate_sonar_command(
 
     // Generate the sonar command
     let mut command = format!(
-        "./gradlew sonar -Dsonar.token={} -Dsonar.host.url={} -Dsonar.projectKey={} -Dsonar.projectName={}",
+        "./gradlew test sonar -Dsonar.token={} -Dsonar.host.url={} -Dsonar.projectKey={} -Dsonar.projectName={}",
         project.sonar_token,
         project.sonar_host_url,
         project.project_key,
@@ -269,4 +282,109 @@ pub async fn generate_sonar_command(
         "command": command,
         "project_path": project.project_path
     })))
+}
+
+pub async fn delete_project(
+    req: web::Json<ScanProjectRequest>,
+    project_service: web::Data<ProjectService>,
+) -> Result<HttpResponse> {
+    let sonar_host_url = env::var("SONAR_HOST_URL").unwrap_or_else(|_| "http://localhost:9000".to_string());
+    
+    // Find project by path
+    let project = match project_service.get_project_by_path(&req.project_path).await {
+        Ok(Some(project)) => project,
+        Ok(None) => {
+            return Ok(HttpResponse::NotFound().json(serde_json::json!({
+                "error": "Project not found"
+            })));
+        }
+        Err(e) => {
+            return Ok(HttpResponse::InternalServerError().json(serde_json::json!({
+                "error": format!("Database error: {}", e)
+            })));
+        }
+    };
+
+    // Get USER_TOKEN for admin operations (create/delete projects)
+    let admin_token = match project_service.get_admin_token_by_type(&sonar_host_url, "USER_TOKEN").await {
+        Ok(Some(token)) => token,
+        Ok(None) => {
+            return Ok(HttpResponse::BadRequest().json(serde_json::json!({
+                "error": "No USER_TOKEN found for this SonarQube instance. Please create a USER_TOKEN first.",
+                "suggestion": "Use POST /api/admin-token with token_type: 'USER_TOKEN' (must be created with a user that has admin privileges)"
+            })));
+        }
+        Err(e) => {
+            return Ok(HttpResponse::InternalServerError().json(serde_json::json!({
+                "error": format!("Database error: {}", e)
+            })));
+        }
+    };
+    
+    let sonar_client = SonarQubeClient::new(sonar_host_url.clone(), admin_token);
+    
+    // Delete project from SonarQube first
+    let sonar_delete_result = sonar_client.delete_project(&project.project_key).await;
+    let mut sonar_delete_error = None;
+    
+    if let Err(e) = sonar_delete_result {
+        let error_msg = e.to_string();
+        sonar_delete_error = Some(error_msg.clone());
+        
+        // Check if it's a privileges error (case-insensitive, check multiple variations)
+        let error_lower = error_msg.to_lowercase();
+        if error_lower.contains("insufficient privileges") 
+            || error_lower.contains("privilege") 
+            || error_lower.contains("not authorized")
+            || error_lower.contains("unauthorized")
+            || error_lower.contains("access denied") {
+            // Return a helpful error message - don't delete from database
+            return Ok(HttpResponse::Forbidden().json(serde_json::json!({
+                "error": "Insufficient privileges to delete project from SonarQube",
+                "details": "The admin token does not have the necessary permissions to delete projects. Please ensure the token has admin privileges in SonarQube, or create a new admin token with proper permissions.",
+                "sonar_error": error_msg,
+                "suggestion": "You may need to recreate the admin token with a user that has administrator permissions, or manually delete the project from SonarQube UI.",
+                "project_key": project.project_key,
+                "project_path": project.project_path,
+                "note": "Project was NOT deleted from database due to insufficient privileges. Please fix permissions and try again, or delete manually from both SonarQube and database."
+            })));
+        }
+        
+        // For other errors, we'll continue with database deletion but warn the user
+        println!("Warning: Failed to delete project from SonarQube: {}", error_msg);
+    }
+
+    // Delete project from database
+    match project_service.delete_project_by_path(&req.project_path).await {
+        Ok(Some(_)) => {
+            // If SonarQube deletion failed with non-privilege error, include warning
+            if let Some(error) = sonar_delete_error {
+                Ok(HttpResponse::Ok().json(serde_json::json!({
+                    "message": "Project deleted from database successfully",
+                    "warning": "Failed to delete project from SonarQube",
+                    "sonar_error": error,
+                    "project_key": project.project_key,
+                    "project_path": project.project_path,
+                    "note": "Project has been removed from local database. You may need to manually delete it from SonarQube."
+                })))
+            } else {
+                Ok(HttpResponse::Ok().json(serde_json::json!({
+                    "message": "Project deleted successfully from both SonarQube and database",
+                    "project_key": project.project_key,
+                    "project_path": project.project_path
+                })))
+            }
+        }
+        Ok(None) => {
+            // Project was already deleted or doesn't exist
+            Ok(HttpResponse::NotFound().json(serde_json::json!({
+                "error": "Project not found in database"
+            })))
+        }
+        Err(e) => {
+            Ok(HttpResponse::InternalServerError().json(serde_json::json!({
+                "error": format!("Failed to delete project from database: {}", e)
+            })))
+        }
+    }
 }
