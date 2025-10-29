@@ -1,42 +1,98 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+* {
+    margin: 0;
+    padding: 0;
+    box-sizing: border-box;
+}
+
 #root {
-  max-width: 1280px;
-  margin: 0 auto;
-  padding: 2rem;
-  text-align: center;
+    width: 100%;
 }
 
-.logo {
-  height: 6em;
-  padding: 1.5em;
-  will-change: filter;
-  transition: filter 300ms;
-}
-.logo:hover {
-  filter: drop-shadow(0 0 2em #646cffaa);
-}
-.logo.react:hover {
-  filter: drop-shadow(0 0 2em #61dafbaa);
+.app {
+  min-height: 100vh;
 }
 
-@keyframes logo-spin {
-  from {
-    transform: rotate(0deg);
-  }
-  to {
-    transform: rotate(360deg);
-  }
+/* Custom Driver.js styling for Sonar theme */
+.driver-popover {
+  border-radius: 12px !important;
+  box-shadow: 0 20px 25px -5px rgba(0, 0, 0, 0.1), 0 10px 10px -5px rgba(0, 0, 0, 0.04) !important;
 }
 
-@media (prefers-reduced-motion: no-preference) {
-  a:nth-of-type(2) .logo {
-    animation: logo-spin infinite 20s linear;
-  }
+.driver-popover-title {
+  font-size: 18px !important;
+  font-weight: 600 !important;
+  color: #1f2937 !important;
+  margin-bottom: 8px !important;
 }
 
-.card {
-  padding: 2em;
+.driver-popover-description {
+  font-size: 14px !important;
+  color: #6b7280 !important;
+  line-height: 1.5 !important;
 }
 
-.read-the-docs {
-  color: #888;
+.driver-popover-description img {
+  border: 2px solid #e5e7eb !important;
+  box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1) !important;
+}
+
+.driver-popover-description p {
+  margin: 0 0 8px 0 !important;
+}
+
+.driver-popover-description div {
+  margin: 0 !important;
+}
+
+.driver-popover-footer {
+  margin-top: 16px !important;
+}
+
+.driver-popover-btn {
+  border-radius: 8px !important;
+  font-weight: 500 !important;
+  padding: 8px 16px !important;
+}
+
+.driver-popover-btn-primary {
+  background: linear-gradient(135deg, #3b82f6, #1d4ed8) !important;
+  border: none !important;
+}
+
+.driver-popover-btn-primary:hover {
+  background: linear-gradient(135deg, #2563eb, #1e40af) !important;
+}
+
+.driver-popover-btn-secondary {
+  background: #f3f4f6 !important;
+  color: #374151 !important;
+  border: 1px solid #d1d5db !important;
+}
+
+.driver-popover-btn-secondary:hover {
+  background: #e5e7eb !important;
+}
+
+.driver-popover-arrow {
+  border-color: transparent !important;
+}
+
+.driver-popover-arrow-side-top {
+  border-bottom-color: #ffffff !important;
+}
+
+.driver-popover-arrow-side-bottom {
+  border-top-color: #ffffff !important;
+}
+
+.driver-popover-arrow-side-left {
+  border-right-color: #ffffff !important;
+}
+
+.driver-popover-arrow-side-right {
+  border-left-color: #ffffff !important;
 }
