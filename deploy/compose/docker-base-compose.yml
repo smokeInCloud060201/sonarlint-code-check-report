@@ -1,4 +1,3 @@
-version: "3.8"
 services:
   sonarqube:
     image: sonarqube:community
@@ -17,10 +16,16 @@ services:
       - sonarqube_data:/opt/sonarqube/data
       - sonarqube_logs:/opt/sonarqube/logs
       - sonarqube_extensions:/opt/sonarqube/extensions
+    healthcheck:
+      test: ["CMD-SHELL", "curl -sf http://localhost:9000/api/system/status | grep -q 'UP' || exit 1"]
+      interval: 20s
+      timeout: 5s
+      retries: 15
+      start_period: 60s
 
   sonarcutedb:
     image: postgres:18
-    container_name: postgres_sonar
+    container_name: sonarcutedb
     environment:
       POSTGRES_USER: sonar
       POSTGRES_PASSWORD: sonar
@@ -30,6 +35,12 @@ services:
     volumes:
       - postgresql:/var/lib/postgresql
       - ./initdb:/docker-entrypoint-initdb.d
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U $${POSTGRES_USER} -d $${POSTGRES_DB}"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 10s
 
 volumes:
   sonarqube_data:

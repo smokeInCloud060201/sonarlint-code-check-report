@@ -1,11 +1,14 @@
-version: '3.8'
-
 services:
   sonarcuteapi:
     image: sonarcute-api:latest
     container_name: sonarcute-api
     networks:
       - sonarcute-network
+    depends_on:
+      sonarqube:
+        condition: service_healthy
+      sonarcutedb:
+        condition: service_healthy
     environment:
       SERVER_HOST: 0.0.0.0
       SERVER_PORT: 8080
@@ -21,15 +24,17 @@ services:
       - sonarcute-network
     depends_on:
       - sonarcuteapi
-      - web
-    restart: "no"                # Don't restart after completion
+    restart: "no"
     entrypoint: >
       sh -c "
         echo ' Waiting for sonarcuteapi to be ready...' &&
         until nc -z sonarcuteapi 8080; do sleep 2; done &&
         echo ' sonarcuteapi is up! Running token generation...' &&
         /usr/local/bin/generate_tokens.sh &&
-        echo ' Token generation complete. Exiting...'
+        echo ' Token generation complete.' &&
+        echo ' Running quality gate setup...' &&
+        /usr/local/bin/quality_gate_setup.sh &&
+        echo ' Quality gate setup complete. Exiting...'
       "
     profiles:
       - init

@@ -4,7 +4,7 @@ pub fn init() {
     unsafe {
         env::set_var(
             "RUST_LOG",
-            "api=info,api=debug,actix_web=info,actix_web=debug,actix_server=info",
+            "info,debug,actix_web=info,actix_web=debug,actix_server=info",
         );
         env::set_var(
             "RUST_BACKTRACE",

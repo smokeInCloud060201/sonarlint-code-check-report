@@ -2,7 +2,7 @@ use reqwest::Client;
 use serde::{Deserialize, Serialize};
 use anyhow::Result;
 use base64::{Engine as _, engine::general_purpose};
-
+use tracing::info;
 
 #[derive(Debug, Serialize, Deserialize)]
 pub struct TokenResponse {
@@ -115,6 +115,21 @@ pub struct Period {
     pub index: i32,
     pub value: String,
     pub date: String,
+}
+
+// Quality Gates list types
+#[derive(Debug, Serialize, Deserialize)]
+pub struct QualityGateItem {
+    pub id: i64,
+    pub name: String,
+    #[serde(rename = "isDefault")]
+    pub is_default: Option<bool>,
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+pub struct QualityGatesListResponse {
+    #[serde(rename = "qualitygates")]
+    pub quality_gates: Vec<QualityGateItem>,
 }
 
 pub struct SonarQubeClient {
@@ -307,5 +322,170 @@ pub async fn get_project_quality_gate(&self, project_key: &str) -> Result<Qualit
         }
 
         Ok(())
+    }
+
+    // Quality Gate APIs
+    pub async fn create_quality_gate(&self, name: &str) -> Result<()> {
+        let url = format!("{}/api/qualitygates/create", self.base_url);
+        let params = [("name", name.to_string())];
+
+        let response = self.client
+            .post(&url)
+            .header("Authorization", format!("Basic {}", general_purpose::STANDARD.encode(format!("{}:", self.admin_token))))
+            .form(&params)
+            .send()
+            .await?;
+
+        if !response.status().is_success() {
+            let error_text = response.text().await?;
+            return Err(anyhow::anyhow!("Failed to create quality gate: {}", error_text));
+        }
+
+        Ok(())
+    }
+
+    pub async fn add_quality_gate_condition(&self, gate_name: &str, metric: &str, op: &str, error: &str) -> Result<()> {
+        let url = format!("{}/api/qualitygates/create_condition", self.base_url);
+        // SonarQube expects: gateName, metric, op, error
+        let params = [
+            ("gateName", gate_name.to_string()),
+            ("metric", metric.to_string()),
+            ("op", op.to_string()),
+            ("error", error.to_string()),
+        ];
+
+        let response = self.client
+            .post(&url)
+            .header("Authorization", format!("Basic {}", general_purpose::STANDARD.encode(format!("{}:", self.admin_token))))
+            .form(&params)
+            .send()
+            .await?;
+
+        if !response.status().is_success() {
+            let error_text = response.text().await?;
+            return Err(anyhow::anyhow!("Failed to add quality gate condition: {}", error_text));
+        }
+
+        Ok(())
+    }
+
+    pub async fn rename_quality_gate(&self, name: &str, new_name: &str) -> Result<()> {
+        let url = format!("{}/api/qualitygates/rename", self.base_url);
+        // Many SonarQube versions accept 'name' and 'newName'
+        let params = [
+            ("name", name.to_string()),
+            ("newName", new_name.to_string()),
+        ];
+
+        let response = self.client
+            .post(&url)
+            .header("Authorization", format!("Basic {}", general_purpose::STANDARD.encode(format!("{}:", self.admin_token))))
+            .form(&params)
+            .send()
+            .await?;
+
+        if !response.status().is_success() {
+            let error_text = response.text().await?;
+            return Err(anyhow::anyhow!("Failed to rename quality gate: {}", error_text));
+        }
+
+        Ok(())
+    }
+
+    pub async fn delete_quality_gate(&self, name: &str) -> Result<()> {
+        let url = format!("{}/api/qualitygates/destroy", self.base_url);
+        let params = [("name", name.to_string())];
+
+        let response = self.client
+            .post(&url)
+            .header("Authorization", format!("Basic {}", general_purpose::STANDARD.encode(format!("{}:", self.admin_token))))
+            .form(&params)
+            .send()
+            .await?;
+
+        if !response.status().is_success() {
+            let error_text = response.text().await?;
+            return Err(anyhow::anyhow!("Failed to delete quality gate: {}", error_text));
+        }
+
+        Ok(())
+    }
+
+    pub async fn set_default_quality_gate(&self, name: &str) -> Result<()> {
+        let url = format!("{}/api/qualitygates/set_as_default", self.base_url);
+        let params = [("name", name.to_string())];
+
+        let response = self.client
+            .post(&url)
+            .header("Authorization", format!("Basic {}", general_purpose::STANDARD.encode(format!("{}:", self.admin_token))))
+            .form(&params)
+            .send()
+            .await?;
+
+        if !response.status().is_success() {
+            let error_text = response.text().await?;
+            return Err(anyhow::anyhow!("Failed to set default quality gate: {}", error_text));
+        }
+
+        Ok(())
+    }
+
+    pub async fn get_quality_gates(&self) -> Result<serde_json::Value> {
+        let url = format!("{}/api/qualitygates/list", self.base_url);
+
+        let response = self.client
+            .get(&url)
+            .header("Authorization", format!("Basic {}", general_purpose::STANDARD.encode(format!("{}:", self.admin_token))))
+            .send()
+            .await?;
+
+        info!("response {:?}", response);
+
+        if !response.status().is_success() {
+            let error_text = response.text().await?;
+            return Err(anyhow::anyhow!("Failed to list quality gates: {}", error_text));
+        }
+
+        let list: serde_json::Value = response.json().await?;
+        Ok(list)
+    }
+
+    pub async fn delete_quality_gate_condition(&self, condition_id: &str) -> Result<()> {
+        let url = format!("{}/api/qualitygates/delete_condition", self.base_url);
+        let params = [("id", condition_id.to_string())];
+
+        let response = self.client
+            .post(&url)
+            .header("Authorization", format!("Basic {}", general_purpose::STANDARD.encode(format!("{}:", self.admin_token))))
+            .form(&params)
+            .send()
+            .await?;
+
+        if !response.status().is_success() {
+            let error_text = response.text().await?;
+            return Err(anyhow::anyhow!("Failed to delete quality gate condition: {}", error_text));
+        }
+
+        Ok(())
+    }
+
+    pub async fn get_quality_gate_details(&self, name: &str) -> Result<serde_json::Value> {
+        let url = format!("{}/api/qualitygates/show", self.base_url);
+        let params = [("name", name.to_string())];
+
+        let response = self.client
+            .get(&url)
+            .query(&params)
+            .header("Authorization", format!("Basic {}", general_purpose::STANDARD.encode(format!("{}:", self.admin_token))))
+            .send()
+            .await?;
+
+        if !response.status().is_success() {
+            let error_text = response.text().await?;
+            return Err(anyhow::anyhow!("Failed to get quality gate details: {}", error_text));
+        }
+
+        let details: serde_json::Value = response.json().await?;
+        Ok(details)
     }
 }

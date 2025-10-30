@@ -17,15 +17,10 @@ build-token-generator-image:
 create-network:
 	 $(DOCKER_BIN) network inspect $(DOCKER_NETWORK_NAME) >/dev/null 2>&1 || $(DOCKER_BIN) network create $(DOCKER_NETWORK_NAME)
 
-base-setup:
-	$(DOCKER_COMPOSE_BIN) -f ./deploy/compose/docker-base-compose.yml -p sonarcute up -d
-
 gen-token:
-	$(DOCKER_COMPOSE_BIN) -f ./deploy/compose/docker-app-compose.yml -p sonarcute --profile init run --rm tokengenerator
+	$(DOCKER_COMPOSE_BIN) -f ./deploy/compose/docker-base-compose.yml -f ./deploy/compose/docker-app-compose.yml -p sonarcute --profile init run --rm tokengenerator
 
-app-setup:
-	$(DOCKER_COMPOSE_BIN) -f ./deploy/compose/docker-app-compose.yml -p sonarcute up -d
+app-base-setup:
+	$(DOCKER_COMPOSE_BIN) -f ./deploy/compose/docker-base-compose.yml -f ./deploy/compose/docker-app-compose.yml -p sonarcute up -d
 
-
-
-setup: build-web-image build-api-image build-token-generator-image create-network base-setup app-setup gen-token
+setup: build-web-image build-api-image build-token-generator-image create-network app-base-setup gen-token

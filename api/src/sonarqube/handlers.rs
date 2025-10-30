@@ -2,6 +2,8 @@ use actix_web::{web, HttpResponse, Result};
 use crate::database::service::{CreateProjectRequest, ScanProjectRequest, ProjectService, CreateAdminTokenRequest};
 use crate::sonarqube::client::SonarQubeClient;
 use std::env;
+use serde::{Deserialize, Serialize};
+use tracing::info;
 
 pub async fn create_project(
     req: web::Json<CreateProjectRequest>,
@@ -386,5 +388,294 @@ pub async fn delete_project(
                 "error": format!("Failed to delete project from database: {}", e)
             })))
         }
+    }
+}
+
+// Quality Gate DTOs
+#[derive(Debug, Serialize, Deserialize)]
+pub struct CreateQualityGateRequest {
+    pub name: String,
+    pub condition_metric: Option<String>,
+    pub condition_op: Option<String>,
+    pub condition_error: Option<String>,
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+pub struct UpdateQualityGateRequest {
+    pub name: String,
+    pub new_name: Option<String>,
+    pub condition_metric: Option<String>,
+    pub condition_op: Option<String>,
+    pub condition_error: Option<String>,
+    pub add_conditions: Option<Vec<QualityGateConditionInput>>,
+    pub delete_condition_ids: Option<Vec<String>>,
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+pub struct DeleteQualityGateRequest {
+    pub name: String,
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+pub struct SetDefaultQualityGateRequest {
+    pub name: String,
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+pub struct QualityGateConditionInput {
+    pub metric: String,
+    pub op: String,
+    pub error: String,
+}
+
+pub async fn create_quality_gate(
+    req: web::Json<CreateQualityGateRequest>,
+    project_service: web::Data<ProjectService>,
+) -> Result<HttpResponse> {
+    let sonar_host_url = env::var("SONAR_HOST_URL").unwrap_or_else(|_| "http://localhost:9000".to_string());
+
+    // Need USER_TOKEN for admin operations
+    let admin_token = match project_service.get_admin_token_by_type(&sonar_host_url, "USER_TOKEN").await {
+        Ok(Some(token)) => token,
+        Ok(None) => {
+            return Ok(HttpResponse::BadRequest().json(serde_json::json!({
+                "error": "No USER_TOKEN found for this SonarQube instance. Please create a USER_TOKEN first.",
+                "suggestion": "Use POST /api/admin-token with token_type: 'USER_TOKEN' (must be created with a user that has admin privileges)"
+            })));
+        }
+        Err(e) => {
+            return Ok(HttpResponse::InternalServerError().json(serde_json::json!({
+                "error": format!("Database error: {}", e)
+            })));
+        }
+    };
+
+    let sonar_client = SonarQubeClient::new(sonar_host_url.clone(), admin_token);
+
+    if let Err(e) = sonar_client.create_quality_gate(&req.name).await {
+        return Ok(HttpResponse::InternalServerError().json(serde_json::json!({
+            "error": format!("Failed to create quality gate: {}", e)
+        })));
+    }
+
+    // Optionally add a condition to the newly created gate
+    if let (Some(metric), Some(op), Some(error)) = (&req.condition_metric, &req.condition_op, &req.condition_error) {
+        if let Err(e) = sonar_client.add_quality_gate_condition(&req.name, metric, op, error).await {
+            return Ok(HttpResponse::InternalServerError().json(serde_json::json!({
+                "error": format!("Quality gate created, but failed to add condition: {}", e)
+            })));
+        }
+    }
+
+    Ok(HttpResponse::Ok().json(serde_json::json!({
+        "message": "Quality gate created successfully",
+        "name": req.name
+    })))
+}
+
+pub async fn update_quality_gate(
+    req: web::Json<UpdateQualityGateRequest>,
+    project_service: web::Data<ProjectService>,
+) -> Result<HttpResponse> {
+    let sonar_host_url = env::var("SONAR_HOST_URL").unwrap_or_else(|_| "http://localhost:9000".to_string());
+
+    let admin_token = match project_service.get_admin_token_by_type(&sonar_host_url, "USER_TOKEN").await {
+        Ok(Some(token)) => token,
+        Ok(None) => {
+            return Ok(HttpResponse::BadRequest().json(serde_json::json!({
+                "error": "No USER_TOKEN found for this SonarQube instance. Please create a USER_TOKEN first.",
+                "suggestion": "Use POST /api/admin-token with token_type: 'USER_TOKEN' (must be created with a user that has admin privileges)"
+            })));
+        }
+        Err(e) => {
+            return Ok(HttpResponse::InternalServerError().json(serde_json::json!({
+                "error": format!("Database error: {}", e)
+            })));
+        }
+    };
+
+    let sonar_client = SonarQubeClient::new(sonar_host_url.clone(), admin_token);
+
+    if let Some(new_name) = &req.new_name {
+        if let Err(e) = sonar_client.rename_quality_gate(&req.name, new_name).await {
+            return Ok(HttpResponse::InternalServerError().json(serde_json::json!({
+                "error": format!("Failed to rename quality gate: {}", e)
+            })));
+        }
+    }
+
+    // Backward-compatible single condition add
+    if let (Some(metric), Some(op), Some(error)) = (&req.condition_metric, &req.condition_op, &req.condition_error) {
+        if let Err(e) = sonar_client.add_quality_gate_condition(req.new_name.as_ref().unwrap_or(&req.name), metric, op, error).await {
+            return Ok(HttpResponse::InternalServerError().json(serde_json::json!({
+                "error": format!("Failed to add condition: {}", e)
+            })));
+        }
+    }
+
+    // Multiple deletes by condition id
+    if let Some(ids) = &req.delete_condition_ids {
+        for id in ids {
+            if let Err(e) = sonar_client.delete_quality_gate_condition(id).await {
+                return Ok(HttpResponse::InternalServerError().json(serde_json::json!({
+                    "error": format!("Failed to delete condition id {}: {}", id, e)
+                })));
+            }
+        }
+    }
+
+    // Multiple adds
+    if let Some(conds) = &req.add_conditions {
+        let gate_name = req.new_name.as_ref().unwrap_or(&req.name);
+        for c in conds {
+            if let Err(e) = sonar_client.add_quality_gate_condition(gate_name, &c.metric, &c.op, &c.error).await {
+                return Ok(HttpResponse::InternalServerError().json(serde_json::json!({
+                    "error": format!("Failed to add condition (metric {}): {}", c.metric, e)
+                })));
+            }
+        }
+    }
+
+    Ok(HttpResponse::Ok().json(serde_json::json!({
+        "message": "Quality gate updated successfully",
+        "name": req.new_name.as_ref().unwrap_or(&req.name)
+    })))
+}
+
+pub async fn delete_quality_gate(
+    req: web::Json<DeleteQualityGateRequest>,
+    project_service: web::Data<ProjectService>,
+) -> Result<HttpResponse> {
+    let sonar_host_url = env::var("SONAR_HOST_URL").unwrap_or_else(|_| "http://localhost:9000".to_string());
+
+    let admin_token = match project_service.get_admin_token_by_type(&sonar_host_url, "USER_TOKEN").await {
+        Ok(Some(token)) => token,
+        Ok(None) => {
+            return Ok(HttpResponse::BadRequest().json(serde_json::json!({
+                "error": "No USER_TOKEN found for this SonarQube instance. Please create a USER_TOKEN first.",
+                "suggestion": "Use POST /api/admin-token with token_type: 'USER_TOKEN' (must be created with a user that has admin privileges)"
+            })));
+        }
+        Err(e) => {
+            return Ok(HttpResponse::InternalServerError().json(serde_json::json!({
+                "error": format!("Database error: {}", e)
+            })));
+        }
+    };
+
+    let sonar_client = SonarQubeClient::new(sonar_host_url.clone(), admin_token);
+
+    if let Err(e) = sonar_client.delete_quality_gate(&req.name).await {
+        return Ok(HttpResponse::InternalServerError().json(serde_json::json!({
+            "error": format!("Failed to delete quality gate: {}", e)
+        })));
+    }
+
+    Ok(HttpResponse::Ok().json(serde_json::json!({
+        "message": "Quality gate deleted successfully",
+        "name": req.name
+    })))
+}
+
+pub async fn set_default_quality_gate(
+    req: web::Json<SetDefaultQualityGateRequest>,
+    project_service: web::Data<ProjectService>,
+) -> Result<HttpResponse> {
+    let sonar_host_url = env::var("SONAR_HOST_URL").unwrap_or_else(|_| "http://localhost:9000".to_string());
+
+    let admin_token = match project_service.get_admin_token_by_type(&sonar_host_url, "USER_TOKEN").await {
+        Ok(Some(token)) => token,
+        Ok(None) => {
+            return Ok(HttpResponse::BadRequest().json(serde_json::json!({
+                "error": "No USER_TOKEN found for this SonarQube instance. Please create a USER_TOKEN first.",
+                "suggestion": "Use POST /api/admin-token with token_type: 'USER_TOKEN' (must be created with a user that has admin privileges)"
+            })));
+        }
+        Err(e) => {
+            return Ok(HttpResponse::InternalServerError().json(serde_json::json!({
+                "error": format!("Database error: {}", e)
+            })));
+        }
+    };
+
+    let sonar_client = SonarQubeClient::new(sonar_host_url.clone(), admin_token);
+
+    if let Err(e) = sonar_client.set_default_quality_gate(&req.name).await {
+        return Ok(HttpResponse::InternalServerError().json(serde_json::json!({
+            "error": format!("Failed to set default quality gate: {}", e)
+        })));
+    }
+
+    Ok(HttpResponse::Ok().json(serde_json::json!({
+        "message": "Quality gate set as default",
+        "name": req.name
+    })))
+}
+
+pub async fn get_quality_gates(
+    project_service: web::Data<ProjectService>,
+) -> Result<HttpResponse> {
+    let sonar_host_url = env::var("SONAR_HOST_URL").unwrap_or_else(|_| "http://localhost:9000".to_string());
+
+    let admin_token = match project_service.get_admin_token_by_type(&sonar_host_url, "USER_TOKEN").await {
+        Ok(Some(token)) => token,
+        Ok(None) => {
+            return Ok(HttpResponse::BadRequest().json(serde_json::json!({
+                "error": "No USER_TOKEN found for this SonarQube instance. Please create a USER_TOKEN first.",
+                "suggestion": "Use POST /api/admin-token with token_type: 'USER_TOKEN' (must be created with a user that has admin privileges)"
+            })));
+        }
+        Err(e) => {
+            return Ok(HttpResponse::InternalServerError().json(serde_json::json!({
+                "error": format!("Database error: {}", e)
+            })));
+        }
+    };
+
+    info!("admin_token : {}", admin_token);
+
+    let sonar_client = SonarQubeClient::new(sonar_host_url.clone(), admin_token);
+
+    match sonar_client.get_quality_gates().await {
+        Ok(list) => Ok(HttpResponse::Ok().json(list)),
+        Err(e) => Ok(HttpResponse::InternalServerError().json(serde_json::json!({
+            "error": format!("Failed to list quality gates: {}", e)
+        }))),
+    }
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+pub struct QualityGateDetailsQuery {
+    pub name: String,
+}
+
+pub async fn get_quality_gate_details(
+    query: web::Query<QualityGateDetailsQuery>,
+    project_service: web::Data<ProjectService>,
+) -> Result<HttpResponse> {
+    let sonar_host_url = env::var("SONAR_HOST_URL").unwrap_or_else(|_| "http://localhost:9000".to_string());
+
+    let admin_token = match project_service.get_admin_token_by_type(&sonar_host_url, "USER_TOKEN").await {
+        Ok(Some(token)) => token,
+        Ok(None) => {
+            return Ok(HttpResponse::BadRequest().json(serde_json::json!({
+                "error": "No USER_TOKEN found for this SonarQube instance. Please create a USER_TOKEN first.",
+                "suggestion": "Use POST /api/admin-token with token_type: 'USER_TOKEN' (must be created with a user that has admin privileges)"
+            })));
+        }
+        Err(e) => {
+            return Ok(HttpResponse::InternalServerError().json(serde_json::json!({
+                "error": format!("Database error: {}", e)
+            })));
+        }
+    };
+
+    let sonar_client = SonarQubeClient::new(sonar_host_url.clone(), admin_token);
+
+    match sonar_client.get_quality_gate_details(&query.name).await {
+        Ok(details) => Ok(HttpResponse::Ok().json(details)),
+        Err(e) => Ok(HttpResponse::InternalServerError().json(serde_json::json!({
+            "error": format!("Failed to get quality gate details: {}", e)
+        }))),
     }
 }
