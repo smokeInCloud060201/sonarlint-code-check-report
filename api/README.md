@@ -1,266 +1,309 @@
-# SonarQube Code Check Report API
+# SonarCute API - Backend Documentation
 
-A Rust-based API for managing SonarQube projects and generating code quality reports.
+Rust-based REST API for managing SonarQube projects, tokens, and code quality reports.
 
-## Features
+## Table of Contents
 
-- **Create Project**: Automatically creates projects in SonarQube and generates project tokens
-- **Generate Command**: Returns the exact sonar-scan command to run
-- **Get Results**: Fetches scan results (issues and coverage) from SonarQube
+- [Overview](#overview)
+- [Tech Stack](#tech-stack)
+- [Setup](#setup)
+- [Configuration](#configuration)
+- [Database](#database)
+- [Running the Server](#running-the-server)
+- [API Endpoints](#api-endpoints)
+- [Development](#development)
+
+## Overview
+
+The SonarCute API is a high-performance backend service built with Rust and Actix-web. It provides:
+
+- Project management (create, read, delete)
+- Admin token management for SonarQube operations
+- SonarQube API integration
+- Code quality metrics retrieval (issues, coverage, quality gates)
+- SonarQube scanner command generation
+
+## Tech Stack
+
+- **Rust** (Edition 2024)
+- **Actix-web** 4.11.0 - Web framework
+- **SeaORM** 0.12 - Database ORM
+- **PostgreSQL** - Database
+- **Reqwest** - HTTP client for SonarQube API
+- **Serde** - Serialization/deserialization
+- **Tracing** - Structured logging
 
 ## Setup
 
 ### Prerequisites
 
 - Rust (latest stable version)
-- PostgreSQL running on port 5432
-- SonarQube running on port 9000
+- PostgreSQL 12+
+- SonarQube instance (running on port 9000 by default)
+- Cargo (Rust package manager)
 
-### Database Setup
+### Installation
 
-1. Create PostgreSQL database:
-```sql
-CREATE DATABASE sonarcute;
-CREATE USER sonar WITH PASSWORD 'sonar';
-GRANT ALL PRIVILEGES ON DATABASE sonarcute TO sonar;
-```
+1. **Navigate to the API directory**
+   ```bash
+   cd api
+   ```
 
-2. Run migrations:
-```bash
-cd api
-psql -U sonar -d sonarcute -f migrations/20241201000001_create_projects/up.sql
-```
+2. **Create environment file**
+   ```bash
+   cp .env.example .env
+   # Edit .env with your configuration
+   ```
 
-### Environment Configuration
+3. **Install dependencies**
+   ```bash
+   cargo build
+   ```
 
-Create a `.env` file in the `api` directory:
+4. **Set up the database**
+   ```bash
+   # Ensure PostgreSQL is running
+   # Run migrations (see Database section)
+   ```
+
+### Configuration
+
+Create a `.env` file in the `api/` directory:
 
 ```env
-# Server Configuration
-SERVER_HOST=127.0.0.1
-SERVER_PORT=8080
-
-# Database Configuration
+SERVER_HOST=0.0.0.0
+SERVER_PORT=8888
 DATABASE_URL=postgresql://sonar:sonar@localhost:5432/sonarcute
-
-# SonarQube Configuration
 SONAR_HOST_URL=http://localhost:9000
 ```
 
-### Running the Application
+**Environment Variables**:
+- `SERVER_HOST`: Server bind address (default: `0.0.0.0`)
+- `SERVER_PORT`: Server port (default: `8888`)
+- `DATABASE_URL`: PostgreSQL connection string
+- `SONAR_HOST_URL`: SonarQube server URL
+
+## Database
+
+### Schema
+
+The API uses two main tables:
+
+1. **projects**: Stores project information
+   - `id`: Primary key
+   - `project_key`: Unique SonarQube project key
+   - `project_name`: Display name
+   - `project_path`: Local file system path
+   - `sonar_token`: Project-specific analysis token
+   - `sonar_host_url`: SonarQube instance URL
+   - `language`: Programming language
+   - `sources_path`: Source code directory
+   - `tests_path`: Test directory
+   - `coverage_report_path`: Optional coverage report path
+   - `created_at`, `updated_at`: Timestamps
+
+2. **admin_tokens**: Stores admin authentication tokens
+   - `id`: Primary key
+   - `username`: SonarQube username
+   - `token_name`: Token identifier
+   - `token_value`: Actual token value
+   - `token_type`: Either "USER_TOKEN" or "GLOBAL_ANALYSIS_TOKEN"
+   - `sonar_host_url`: Associated SonarQube instance
+   - `created_at`, `updated_at`: Timestamps
+
+ potentially
+
+### Migrations
+
+Migrations are located in `api/migrations/`:
+
+- `20241201000001_create_projects/` - Creates projects table
+- `20241201000002_create_admin_tokens/` - Creates admin_tokens table
+- `20241201000003_add_token_type/` - Adds token_type column
+
+**To run migrations manually**:
+```bash
+# Using SeaORM CLI (if installed)
+sea-orm-cli migrate up
+
+# Or manually execute SQL files in order
+psql -U sonar -d sonarcute -f migrations/20241201000001_create_projects/up.sql
+psql -U sonar -d sonarcute -f migrations/20241201000002_create_admin_tokens/up.sql
+psql -U sonar -d sonarcute -f migrations/20241201000003_add_token_type/up.sql
+```
+
+## Running the Server
+
+### Development Mode
 
 ```bash
-cd api
 cargo run
+```
+
+The server will start on `http://localhost:8888` (or your configured port).
+
+### Production Build
+
+```bash
+cargo build --release
+./target/release/api
+```
+
+### With Docker
+
+```bash
+# Build image
+docker build -t sonarcute-api:latest -f deploy/dockerfile/api.Dockerfile .
+
+# Run container
+docker run -p 8888:8080 \
+  -e SERVER_HOST=0.0.0.0 \
+  -e SERVER_PORT=8080 \
+  -e DATABASE_URL=postgresql://sonar:sonar@db:5432/sonarcute \
+  -e SONAR_HOST_URL=http://sonarqube:9000 \
+  sonarcute-api:latest
 ```
 
 ## API Endpoints
 
-### Create Admin Token
-
-**POST** `/api/admin-token`
-
-Creates a new admin token in SonarQube and stores it in the database. This is required before creating projects.
-
-Request body:
-```json
-{
-  "username": "admin",
-  "password": "admin_password",
-  "token_name": "api_admin_token",
-  "sonar_host_url": "http://localhost:9000"
-}
+### Base URL
+```
+http://localhost:8888/api
 ```
 
-Response:
-```json
-{
-  "id": 1,
-  "username": "admin",
-  "token_name": "api_admin_token",
-  "token_value": "sqp_...",
-  "sonar_host_url": "http://localhost:9000",
-  "created_at": "2024-12-01T10:00:00",
-  "updated_at": "2024-12-01T10:00:00"
-}
-```
+### Endpoints
 
-### Create Project
+| Method | Endpoint | Description |
+|--------|----------|-------------|
+| POST | `/admin-token` | Create admin token |
+| GET | `/projects` | Get all projects |
+| POST | `/projects` | Create new project |
+| DELETE | `/projects` | Delete project |
+| POST | `/results` | Get project analysis results |
+| POST | `/generate-command` | Generate SonarQube scanner command |
 
-**POST** `/api/projects`
-
-Creates a new project in SonarQube and stores project information in the database.
-
-Request body:
-```json
-{
-  "project_key": "my-project",
-  "project_name": "My Project",
-  "project_path": "/path/to/project",
-  "language": "java",
-  "sources_path": "src/main/java",
-  "tests_path": "src/test/java",
-  "coverage_report_path": "build/reports/jacoco/test/jacocoTestReport.xml"
-}
-```
-
-Response:
-```json
-{
-  "id": 1,
-  "project_key": "my-project",
-  "project_name": "My Project",
-  "project_path": "/path/to/project",
-  "sonar_token": "sqp_...",
-  "sonar_host_url": "http://localhost:9000",
-  "language": "java",
-  "sources_path": "src/main/java",
-  "tests_path": "src/test/java",
-  "coverage_report_path": "build/reports/jacoco/test/jacocoTestReport.xml",
-  "created_at": "2024-12-01T10:00:00",
-  "updated_at": "2024-12-01T10:00:00"
-}
-```
-
-### Generate Sonar Command
-
-**POST** `/api/generate-command`
-
-Generates the gradlew sonar command that users can copy and run in their project directory.
-
-Request body:
-```json
-{
-  "project_path": "/path/to/project"
-}
-```
-
-Response:
-```json
-{
-  "command": "./gradlew sonar \\\n  -Dsonar.token=sqp_... \\\n  -Dsonar.host.url=http://localhost:9000 \\\n  -Dsonar.projectKey=my-project \\\n  -Dsonar.projectName=My Project \\\n  -Dsonar.coverage.jacoco.xmlReportPaths=build/reports/jacoco/test/jacocoTestReport.xml \\\n  -Dsonar.language=java \\\n  -Dsonar.sources=src/main/java \\\n  -Dsonar.tests=src/test/java",
-  "project_path": "/path/to/project"
-}
-```
-
-### Get Project Results
-
-**POST** `/api/results`
-
-Fetches issues and coverage metrics from SonarQube for a scanned project.
-
-Request body:
-```json
-{
-  "project_path": "/path/to/project"
-}
-```
-
-Response:
-```json
-{
-  "project": { ... },
-  "issues": {
-    "issues": [
-      {
-        "key": "issue_key",
-        "rule": "rule_key",
-        "severity": "MAJOR",
-        "component": "component_path",
-        "project": "project_key",
-        "line": 42,
-        "message": "Issue description",
-        "status": "OPEN",
-        "type": "CODE_SMELL"
-      }
-    ],
-    "paging": {
-      "pageIndex": 1,
-      "pageSize": 500,
-      "total": 10
-    }
-  },
-  "coverage": {
-    "component": {
-      "measures": [
-        {
-          "metric": "coverage",
-          "value": "85.5"
-        },
-        {
-          "metric": "branch_coverage",
-          "value": "78.2"
-        }
-      ]
-    }
-  }
-}
-```
-
-## Usage Flow
-
-1. **Create admin token** using `/api/admin-token` (first time only)
-2. **Create a project** using `/api/projects`
-3. **Get the command** using `/api/generate-command`
-4. **Run the command** in your project directory
-5. **Fetch results** using `/api/results`
-
-### Example Workflow
-
-```bash
-# 1. Create admin token (first time only)
-curl -X POST http://localhost:8080/api/admin-token \
-  -H "Content-Type: application/json" \
-  -d '{
-    "username": "admin",
-    "password": "admin_password",
-    "token_name": "api_admin_token",
-    "sonar_host_url": "http://localhost:9000"
-  }'
-
-# 2. Create project
-curl -X POST http://localhost:8080/api/projects \
-  -H "Content-Type: application/json" \
-  -d '{
-    "project_key": "my-project",
-    "project_name": "My Project",
-    "project_path": "/path/to/project",
-    "language": "java",
-    "sources_path": "src/main/java",
-    "tests_path": "src/test/java",
-    "coverage_report_path": "build/reports/jacoco/test/jacocoTestReport.xml"
-  }'
-
-# 3. Get the scan command
-curl -X POST http://localhost:8080/api/generate-command \
-  -H "Content-Type: application/json" \
-  -d '{"project_path": "/path/to/project"}'
-
-# 4. Copy and run the returned command in your project directory
-
-# 5. Get scan results
-curl -X POST http://localhost:8080/api/results \
-  -H "Content-Type: application/json" \
-  -d '{"project_path": "/path/to/project"}'
-```
+For detailed endpoint documentation, see [DOCUMENTATION.md](DOCUMENTATION.md).
 
 ## Project Structure
 
 ```
 api/
 ├── src/
-│   ├── database/          # Database models and services
-│   ├── sonarqube/         # SonarQube API client and handlers
-│   ├── web/              # Web server configuration
-│   └── main.rs           # Application entry point
-├── migrations/           # Database migrations
-└── Cargo.toml           # Dependencies
+│   ├── main.rs              # Entry point
+│   ├── web/
+│   │   ├── mod.rs
+│   │   └── server.rs        # HTTP server setup
+│   ├── database/
+│   │   ├── mod.rs           # Database connection
+│   │   ├── entities.rs      # Project entity
+│   │   ├── admin_token_entity.rs  # Admin token entity
+│   │   └── service.rs       # Business logic
+│   ├── sonarqube/
+│   │   ├── mod.rs
+│   │   ├── client.rs        # SonarQube API client
+│   │   └── handlers.rs      # Request handlers
+│   └── config/
+│       ├── mod.rs
+│       └── logger.rs        # Logging configuration
+├── migrations/              # Database migrations
+├── examples/                # Example scripts
+├── Cargo.toml              # Dependencies
+└── README.md               # This file
 ```
 
-## Dependencies
+## Development
 
-- **actix-web**: Web framework
-- **sea-orm**: Database ORM
-- **reqwest**: HTTP client for SonarQube API
-- **serde**: Serialization/deserialization
-- **tokio**: Async runtime
+### Code Organization
+
+- **web/**: HTTP server configuration and routing
+- **database/**: Database models, entities, and service layer
+- **sonarqube/**: SonarQube API client and request handlers
+- **config/**: Configuration and logging setup
+
+### Adding New Endpoints
+
+1. Define request/response types in `database/service.rs` or `sonarqube/handlers.rs`
+2. Create handler function in `sonarqube/handlers.rs`
+3. Register route in `web/server.rs`
+
+### Testing
+
+```bash
+# Run all tests
+cargo test
+
+# Run tests with output
+cargo test -- --nocapture
+```
+
+### Logging
+
+The API uses `tracing` for structured logging. Log levels can be controlled via the `RUST_LOG` environment variable:
+
+```bash
+RUST_LOG=debug cargo run
+```
+
+Available log levels: `error`, `warn`, `info`, `debug`, `trace`
+
+## Security Considerations
+
+1. **Token Storage**: Admin tokens are stored in the database. Ensure database access is properly secured.
+2. **CORS**: CORS is currently configured to allow all origins. Restrict in production.
+3. **Environment Variables**: Never commit `.env` files. Use secure secrets management in production.
+4. **Authentication**: The API currently relies on SonarQube's token-based authentication. Consider adding API-level authentication for production use.
+
+## Token Types
+
+The API uses two types of SonarQube tokens:
+
+1. **USER_TOKEN**: Used for administrative operations (creating/deleting projects). Requires user with admin privileges.
+2. **GLOBAL_ANALYSIS_TOKEN**: Used for reading analysis results (issues, coverage, quality gates).
+
+Both tokens are associated with a specific SonarQube instance URL and are stored in the `admin_tokens` table.
+
+## Troubleshooting
+
+### Connection Issues
+
+**Database Connection Failed**:
+- Verify PostgreSQL is running
+- Check `DATABASE_URL` in `.env`
+- Ensure database exists: `createdb sonarcute`
+
+**SonarQube Connection Failed**:
+- Verify SonarQube is running
+- Check `SONAR_HOST_URL` in `.env`
+- Test connection: `curl http://localhost:9000/api/system/status`
+
+### Token Issues
+
+**No USER_TOKEN found**:
+- Create admin token via `/api/admin-token` endpoint
+- Ensure token type is `USER_TOKEN`
+- Verify user has admin privileges in SonarQube
+
+**No GLOBAL_ANALYSIS_TOKEN found**:
+- Create admin token with `token_type: "GLOBAL_ANALYSIS_TOKEN"`
+- This token is required for fetching project results
+
+## Additional Resources
+
+- [Actix-web Documentation](https://actix.rs/)
+- [SeaORM Documentation](https://www.sea-ql.org/SeaORM/)
+- [SonarQube API Documentation](https://docs.sonarqube.org/latest/extend/web-api/)
+
+## Contributing
+
+When contributing to the API:
+
+1. Follow Rust formatting standards: `cargo fmt`
+2. Run linter: `cargo clippy`
+3. Write tests for new features
+4. Update documentation
+
+---
+
+For detailed API endpoint documentation, see [DOCUMENTATION.md](DOCUMENTATION.md).
+For system architecture details, see [SYSTEM_DESIGN.md](SYSTEM_DESIGN.md).
+
