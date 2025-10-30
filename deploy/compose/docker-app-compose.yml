@@ -14,31 +14,23 @@ services:
     ports:
       - "8888:8080"
 
-  token-generator:
-    image: alpine:latest
-    container_name: token-generator
-    depends_on:
-      - sonarcuteapi
+  tokengenerator:
+    image: sonarcute-token-generator:latest
+    container_name: sonarcute-token-generator
     networks:
       - sonarcute-network
-    volumes:
-      - ./generate_tokens.sh:/usr/local/bin/generate_tokens.sh
+    depends_on:
+      - sonarcuteapi
+      - web
+    restart: "no"                # Don't restart after completion
     entrypoint: >
       sh -c "
-        echo ' Installing curl...' &&
-        apk add --no-cache curl >/dev/null &&
         echo ' Waiting for sonarcuteapi to be ready...' &&
         until nc -z sonarcuteapi 8080; do sleep 2; done &&
-        echo ' sonarcuteapi is up! Running token script...' &&
-        chmod +x /usr/local/bin/generate_tokens.sh &&
-        cd /usr/local/bin &&
-        ./generate_tokens.sh &&
-        echo ' Tokens generated successfully!'
+        echo ' sonarcuteapi is up! Running token generation...' &&
+        /usr/local/bin/generate_tokens.sh &&
+        echo ' Token generation complete. Exiting...'
       "
-    restart: "no"
-    deploy:
-      restart_policy:
-        condition: none
     profiles:
       - init
 
